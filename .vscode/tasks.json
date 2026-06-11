@@ -1,0 +1,54 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "IOC: build",
+            "type": "shell",
+            "command": "make",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "IOC: readiness check",
+            "type": "shell",
+            "command": "bash scripts/check_ioc_ready.sh",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "IOC: Python tests",
+            "type": "shell",
+            "command": "bash scripts/run_tests.sh",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "IOC: run",
+            "type": "shell",
+            "command": "${input:serialDevice} bash scripts/run_ioc.sh",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "IOC: dashboard",
+            "type": "shell",
+            "command": "python3 scripts/ls336_dashboard.py",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "serialDevice",
+            "type": "promptString",
+            "description": "Optional IOC environment prefix, for example TTY=/dev/ttyS4 or PREFIX=LS336_DEV:",
+            "default": ""
+        }
+    ]
+}

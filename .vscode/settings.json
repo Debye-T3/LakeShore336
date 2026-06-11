@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "st.cmd": "shellscript",
+        "*.db": "plaintext",
+        "*.proto": "plaintext"
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests"
+    ]
+}

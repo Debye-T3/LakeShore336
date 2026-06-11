@@ -78,6 +78,49 @@ record(ai, "$(P)Loop1:SETP_RBV") {
     field(SCAN, "2 second")
 }
 
+record(ao, "$(P)Loop1:WARMUP:TARGET") {
+    field(DESC, "Warmup target temperature")
+    field(EGU,  "K")
+    field(PREC, "3")
+    field(DRVL, "0")
+    field(DRVH, "350")
+    field(LOPR, "0")
+    field(HOPR, "350")
+}
+
+record(ao, "$(P)Loop1:WARMUP:STEP") {
+    field(DESC, "Warmup setpoint step size")
+    field(EGU,  "K")
+    field(PREC, "3")
+    field(VAL,  "5")
+    field(DRVL, "0")
+    field(DRVH, "50")
+    field(LOPR, "0")
+    field(HOPR, "50")
+}
+
+record(longout, "$(P)Loop1:WARMUP:STEP:5K") {
+    field(DESC, "Select 5 K warmup step")
+    field(VAL,  "5")
+    field(OUT,  "$(P)Loop1:WARMUP:STEP PP")
+}
+
+record(longout, "$(P)Loop1:WARMUP:STEP:10K") {
+    field(DESC, "Select 10 K warmup step")
+    field(VAL,  "10")
+    field(OUT,  "$(P)Loop1:WARMUP:STEP PP")
+}
+
+record(calcout, "$(P)Loop1:WARMUP:NEXT") {
+    field(DESC, "Advance warmup by one step")
+    field(INPA, "$(P)Loop1:SETP_RBV NPP NMS")
+    field(INPB, "$(P)Loop1:WARMUP:STEP NPP NMS")
+    field(INPC, "$(P)Loop1:WARMUP:TARGET NPP NMS")
+    field(CALC, "C>A?(A+B<C?A+B:C):A")
+    field(OOPT, "Every Time")
+    field(OUT,  "$(P)Loop1:SETP PP")
+}
+
 record(bo, "$(P)Loop1:RAMP:ENABLE") {
     field(DESC, "Loop 1 ramp enable command")
     field(ZNAM, "Off")
@@ -176,7 +219,10 @@ record(calcout, "$(P)COMM:STATUS:CALC") {
     field(INPA, "$(P)ColdHead:TEMP_RBV.SEVR CP MS")
     field(INPB, "$(P)Sample:TEMP_RBV.SEVR CP MS")
     field(INPC, "$(P)Loop1:SETP_RBV.SEVR CP MS")
-    field(CALC, "A>0||B>0||C>0?2:1")
+    field(INPD, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")
+    field(INPE, "$(P)Loop1:RAMP:ENABLE_RBV_RAW.SEVR CP MS")
+    field(INPF, "$(P)Loop1:HTR_RBV.SEVR CP MS")
+    field(CALC, "A>0||B>0||C>0||D>0||E>0||F>0?2:1")
     field(OOPT, "Every Time")
     field(OUT,  "$(P)COMM:STATUS PP")
     field(SCAN, "2 second")

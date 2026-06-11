@@ -3,9 +3,9 @@
 < envPaths
 
 epicsEnvSet("STREAM_PROTOCOL_PATH", "$(TOP)/ls336App/protocol")
-epicsEnvSet("PORT", "LS336_PORT")
-epicsEnvSet("TTY", "/dev/ttyUSB0")
-epicsEnvSet("PREFIX", "LS336:")
+epicsEnvSet("PORT", "$(PORT=LS336_PORT)")
+epicsEnvSet("TTY", "$(TTY=/dev/ttyUSB0)")
+epicsEnvSet("PREFIX", "$(PREFIX=LS336:)")
 
 dbLoadDatabase("../../dbd/ls336.dbd")
 ls336_registerRecordDeviceDriver(pdbbase)
