@@ -2,3 +2,21 @@
 __pycache__/
 *.py[cod]
 wsl-diagnostics.log
+.claude/
+
+# EPICS/WSL local build outputs
+bin/
+db/
+dbd/
+lib/
+include/
+html/
+configure/O.*/
+configure/RELEASE.local
+ls336App/**/O.*/
+ls336App/src/O.Common/
+iocBoot/iocLS336/envPaths
+iocBoot/iocLS336/.iocsh_history
+
+# Locally downloaded EPICS dependency archives
+downloads/

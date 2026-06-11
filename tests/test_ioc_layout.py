@@ -94,6 +94,48 @@ def test_epics_config_loads_release_before_epics_base_config():
     )
 
 
+def test_epics_configure_directory_has_install_makefile():
+    makefile = read("configure/Makefile")
+    rules = read("configure/RULES")
+    rules_dirs = read("configure/RULES_DIRS")
+    rules_ioc = read("configure/RULES.ioc")
+
+    for snippet in [
+        "TOP = ..",
+        "include $(TOP)/configure/CONFIG",
+        "TARGETS = $(CONFIG_TARGETS)",
+        "include $(TOP)/configure/RULES",
+    ]:
+        assert snippet in makefile
+
+    assert "include $(EPICS_BASE)/configure/RULES" in rules
+    assert "include $(EPICS_BASE)/configure/RULES_DIRS" in rules_dirs
+    assert "include $(EPICS_BASE)/configure/RULES.ioc" in rules_ioc
+
+
+def test_ioc_source_makefile_builds_main_and_links_tirpc():
+    makefile = read("ls336App/src/Makefile")
+    main = read("ls336App/src/ls336Main.cpp")
+
+    for snippet in [
+        "ls336_DBD += drvAsynSerialPort.dbd",
+        "ls336_SRCS += ls336Main.cpp",
+        "ls336_SYS_LIBS_Linux += tirpc",
+    ]:
+        assert snippet in makefile
+
+    for snippet in [
+        "epicsThreadSleep",
+        "iocsh(0)",
+        'extern "C"',
+        "ls336_registerRecordDeviceDriver(pdbbase)",
+        "return 0",
+    ]:
+        assert snippet in main
+
+    assert "ls336_registerRecordDeviceDriver.h" not in main
+
+
 def test_ramp_write_passes_prefix_to_protocol_for_enable_lookup():
     db = read("ls336App/Db/ls336.db")
     proto = read("ls336App/protocol/ls336.proto")
@@ -108,6 +150,7 @@ def test_readme_documents_epics_client_workflow():
     for snippet in [
         "wsl --install -d Ubuntu-24.04",
         "scripts/setup_epics_wsl.sh",
+        "libtirpc-dev",
         "scripts/check_ioc_ready.sh",
         "caget LS336:ColdHead:TEMP_RBV",
         "caget LS336:Sample:TEMP_RBV",
@@ -128,6 +171,17 @@ def test_wsl_setup_script_installs_epics_stack_and_writes_release_local():
         "EPICS_BASE_TAG=${EPICS_BASE_TAG:-R7.0.8.1}",
         "ASYN_TAG=${ASYN_TAG:-R4-44}",
         "STREAM_TAG=${STREAM_TAG:-2.8.24}",
+        "EPICS_BASE_URL=${EPICS_BASE_URL:-https://github.com/epics-base/epics-base.git}",
+        "ASYN_URL=${ASYN_URL:-https://github.com/epics-modules/asyn.git}",
+        "STREAM_URL=${STREAM_URL:-https://github.com/paulscherrerinstitute/StreamDevice.git}",
+        "EPICS_BASE_ARCHIVE=${EPICS_BASE_ARCHIVE:-}",
+        "ASYN_ARCHIVE=${ASYN_ARCHIVE:-}",
+        "STREAM_ARCHIVE=${STREAM_ARCHIVE:-}",
+        "downloads/epics-base-R7.0.8.1.tar.gz",
+        "downloads/asyn-R4-44.tar.gz",
+        "downloads/StreamDevice-2.8.24.tar.gz",
+        "Using local archive",
+        "GIT_ATTEMPTS=${GIT_ATTEMPTS:-3}",
         "github.com/epics-base/epics-base.git",
         "github.com/epics-modules/asyn.git",
         "github.com/paulscherrerinstitute/StreamDevice.git",
@@ -135,6 +189,19 @@ def test_wsl_setup_script_installs_epics_stack_and_writes_release_local():
         "EPICS_BASE=${EPICS_ROOT}/base",
         "ASYN=${EPICS_ROOT}/support/asyn",
         "STREAM=${EPICS_ROOT}/support/StreamDevice",
+        "libtirpc-dev",
+        "libpcre3-dev",
+        "/usr/include/tirpc/rpc/rpc.h",
+        "USR_INCLUDES_Linux += -I/usr/include/tirpc",
+        "SYS_LIBS_Linux += tirpc",
+        "CALC=",
+        "SYNAPPS=",
+        "PCRE=",
+        "PCRE_INCLUDE=/usr/include",
+        "PCRE_LIB=/usr/lib/x86_64-linux-gnu",
+        'make -j -C "${EPICS_ROOT}/support/asyn/asyn"',
+        'make -j -C "${EPICS_ROOT}/support/StreamDevice/src"',
+        "tar -xzf",
         "make -j",
     ]:
         assert snippet in script

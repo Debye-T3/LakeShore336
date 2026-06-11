@@ -41,6 +41,12 @@ These limits are intended for first commissioning only. Tighten them for the act
 
 ## Build
 
+This IOC is built from a WSL/Ubuntu terminal. WSL does not need a Linux desktop; use the Ubuntu app from the Windows Start menu, Windows Terminal, or run `wsl` from PowerShell. Windows drives are mounted under `/mnt`, so this checkout is available at:
+
+```bash
+cd /mnt/d/Projects/LakeShore336
+```
+
 Install WSL from an administrator PowerShell if it is not already available:
 
 ```powershell
@@ -51,7 +57,7 @@ After Windows restarts and Ubuntu is initialized, install the Linux build depend
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential git perl libreadline-dev libncurses-dev re2c wget tar
+sudo apt install -y build-essential git perl libreadline-dev libncurses-dev re2c wget tar libtirpc-dev libpcre3-dev
 ```
 
 Then run the setup script from WSL. It downloads and builds EPICS Base, asyn, and StreamDevice under `/opt/epics`, then writes `configure/RELEASE.local` for this IOC:
@@ -59,6 +65,14 @@ Then run the setup script from WSL. It downloads and builds EPICS Base, asyn, an
 ```bash
 cd /mnt/d/Projects/LakeShore336
 bash scripts/setup_epics_wsl.sh
+```
+
+If WSL cannot reach GitHub, download these archives in Windows and place them under `D:\Projects\LakeShore336\downloads`; the setup script will automatically use them instead of cloning:
+
+```text
+downloads/epics-base-R7.0.8.1.tar.gz
+downloads/asyn-R4-44.tar.gz
+downloads/StreamDevice-2.8.24.tar.gz
 ```
 
 The script uses these defaults, which can be overridden with environment variables before running it:
@@ -76,6 +90,8 @@ make
 bash scripts/check_ioc_ready.sh
 ```
 
+The setup script intentionally builds only the asyn and StreamDevice core libraries needed by this IOC. It skips bundled test/example applications that require extra synApps modules or duplicate link settings. On Ubuntu, asyn is configured with `libtirpc-dev`, and StreamDevice is configured to use the system PCRE library from `libpcre3-dev`.
+
 ## Run
 
 Start with the default serial device:
@@ -84,6 +100,8 @@ Start with the default serial device:
 cd iocBoot/iocLS336
 ../../bin/linux-x86_64/ls336 st.cmd
 ```
+
+The startup should recognize `drvAsynSerialPortConfigure`. If it does not, rebuild after confirming `ls336App/src/Makefile` includes `drvAsynSerialPort.dbd`.
 
 Override the serial device when needed:
 
@@ -121,6 +139,19 @@ caget LS336:Loop1:HTR_RBV
 ## Windows to WSL Serial Notes
 
 On Windows, confirm which COM port appears after plugging in the Lake Shore 336. In WSL, that port may appear as `/dev/ttyS<N>` or may need USB/IP forwarding depending on Windows and WSL versions. Once visible in WSL, update `TTY` in `iocBoot/iocLS336/st.cmd` or pass it as an environment macro before launching the IOC.
+
+Check visible serial devices from WSL:
+
+```bash
+ls /dev/ttyUSB*
+ls /dev/ttyS*
+```
+
+Use the actual device when starting the IOC:
+
+```bash
+TTY=/dev/ttyS4 ../../bin/linux-x86_64/ls336 st.cmd
+```
 
 ## WSL Troubleshooting
 
