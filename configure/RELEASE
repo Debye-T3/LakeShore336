@@ -1,0 +1,6 @@
+# Site-specific overrides should go in RELEASE.local.
+-include $(TOP)/configure/RELEASE.local
+
+EPICS_BASE ?= /opt/epics/base
+ASYN ?= /opt/epics/support/asyn
+STREAM ?= /opt/epics/support/StreamDevice

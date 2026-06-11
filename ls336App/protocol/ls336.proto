@@ -1,0 +1,50 @@
+Terminator = CR LF;
+ReplyTimeout = 2000;
+ReadTimeout = 2000;
+ExtraInput = Ignore;
+
+getIDN {
+    out "*IDN?";
+    in "%39c";
+}
+
+getColdHeadTemp {
+    out "KRDG? A";
+    in "%f";
+}
+
+getSampleTemp {
+    out "KRDG? B";
+    in "%f";
+}
+
+getSetpoint {
+    out "SETP? 1";
+    in "%f";
+}
+
+setSetpoint {
+    out "SETP 1,%f";
+    @init { getSetpoint; }
+}
+
+getRampEnable {
+    out "RAMP? 1";
+    in "%d,%*f";
+}
+
+getRampRate {
+    out "RAMP? 1";
+    in "%*d,%f";
+}
+
+setRamp {
+    # Command shape: out "RAMP 1,%d,%f";
+    out "RAMP 1,%(\$1Loop1:RAMP:ENABLE.VAL)d,%f";
+    @init { getRampRate; }
+}
+
+getHeater {
+    out "HTR? 1";
+    in "%f";
+}
