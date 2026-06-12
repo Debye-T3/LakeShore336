@@ -30,7 +30,17 @@ Or double-click/run:
 scripts\run_windows_dashboard.bat
 ```
 
-In the dashboard, choose the Lake Shore COM port, click `Connect`, and use the temperature display, setpoint, ramp, and 5 K / 10 K warmup controls. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
+In the dashboard, choose the Lake Shore COM port and click `Connect`. The panel reads the instrument directly and shows cold-head temperature, sample temperature, setpoint readback, ramp state, ramp rate, heater output, and communication status.
+
+For controlled warmup:
+
+1. Set `Ramp K/min` to a conservative value, for example `0.5` or `1`.
+2. Set `Warmup Target K`.
+3. Choose `Use 5 K Step`, `Use 10 K Step`, or type a custom `Step K`.
+4. For one manual move, click `Advance One Step`.
+5. For a steady rhythm, set `Rhythm interval min` and click `Start Rhythm Warmup`; click `Stop` when you want to hold.
+
+The dashboard writes the Lake Shore ramp command before changing setpoints, so the controller handles the smooth K/min climb while the dashboard controls the larger step size and interval. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
 
 Command-line example:
 

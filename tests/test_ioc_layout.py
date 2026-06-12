@@ -226,6 +226,7 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
 
     for snippet in [
         "class LakeShoreSerialClient",
+        "class DirectDashboard",
         "serial.Serial",
         "bytesize=serial.SEVENBITS",
         "parity=serial.PARITY_ODD",
@@ -238,12 +239,25 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
         "SETP 1,",
         "RAMP 1,",
         "COM3",
+        "Start Rhythm Warmup",
+        "Rhythm interval min",
+        "stop_rhythm_warmup",
+        "_set_ramped_setpoint_worker",
+        "_advance_warmup_worker",
+        "_rhythm_warmup_tick",
+        "client.set_ramp(ramp_rate, 1)",
+        "client.set_setpoint(next_setpoint)",
+        '"_warmup_done"',
+        "Warmup target reached",
+        "Rhythm warmup is already running",
     ]:
         assert snippet in dashboard
 
     assert "python -m pip install pyserial" in runner
     assert "python scripts\\ls336_direct_dashboard.py" in readme
     assert "does not require Linux, WSL, EPICS" in readme
+    assert "Start Rhythm Warmup" in readme
+    assert "step size and interval" in readme
 
 
 def test_ioc_boot_uses_current_epics_host_architecture():
