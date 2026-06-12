@@ -4,7 +4,7 @@ This repository contains a first-version EPICS IOC for a Lake Shore 336 temperat
 
 ## Target Setup
 
-- Host: Linux. On macOS, run Linux in an Ubuntu virtual machine.
+- Host: Windows direct dashboard for operator use; Linux/WSL is optional for the EPICS IOC build.
 - Instrument link: Lake Shore 336 USB presented as a serial port.
 - Default serial device: `/dev/ttyUSB0`.
 - Serial settings: 57600 baud, 7 data bits, odd parity, 1 stop bit.
@@ -12,6 +12,31 @@ This repository contains a first-version EPICS IOC for a Lake Shore 336 temperat
 - PV prefix: `LS336:`.
 
 Edit `configure/RELEASE.local` or pass macros at IOC start time if your EPICS module paths, PV prefix, or serial device differ.
+
+## Windows Direct Dashboard
+
+If the control computer must stay Windows-only, use the direct serial dashboard. It talks to the Lake Shore 336 over a Windows COM port and does not require Linux, WSL, EPICS, `caget`, or `caput`.
+
+Install Python 3 for Windows, then run:
+
+```powershell
+python -m pip install pyserial
+python scripts\ls336_direct_dashboard.py
+```
+
+Or double-click/run:
+
+```bat
+scripts\run_windows_dashboard.bat
+```
+
+In the dashboard, choose the Lake Shore COM port, click `Connect`, and use the temperature display, setpoint, ramp, and 5 K / 10 K warmup controls. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
+
+Command-line example:
+
+```powershell
+python scripts\ls336_direct_dashboard.py --port COM3
+```
 
 ## VS Code and Codex
 
@@ -30,6 +55,7 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 - `IOC: readiness check` verifies the expected build artifacts and client check commands.
 - `IOC: run` starts the IOC and prompts for optional runtime macros such as `TTY=/dev/ttyS4` or `PREFIX=LS336_DEV:`.
 - `IOC: dashboard` opens a visual temperature and warmup control panel.
+- `Windows: direct dashboard` opens the Windows serial dashboard without EPICS.
 
 ## Public PVs
 

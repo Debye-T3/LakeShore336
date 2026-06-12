@@ -41,6 +41,16 @@
                 "reveal": "always",
                 "panel": "dedicated"
             }
+        },
+        {
+            "label": "Windows: direct dashboard",
+            "type": "shell",
+            "command": "python scripts\\ls336_direct_dashboard.py",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
         }
     ],
     "inputs": [

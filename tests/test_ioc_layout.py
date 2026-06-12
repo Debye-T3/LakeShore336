@@ -212,9 +212,38 @@ def test_vscode_tasks_cover_common_ioc_workflows():
         '"command": "${input:serialDevice} bash scripts/run_ioc.sh"',
         '"label": "IOC: dashboard"',
         '"command": "python3 scripts/ls336_dashboard.py"',
+        '"label": "Windows: direct dashboard"',
+        '"command": "python scripts\\\\ls336_direct_dashboard.py"',
         '"id": "serialDevice"',
     ]:
         assert snippet in tasks
+
+
+def test_windows_direct_dashboard_uses_serial_without_epics():
+    dashboard = read("scripts/ls336_direct_dashboard.py")
+    runner = read("scripts/run_windows_dashboard.bat")
+    readme = read("README.md")
+
+    for snippet in [
+        "class LakeShoreSerialClient",
+        "serial.Serial",
+        "bytesize=serial.SEVENBITS",
+        "parity=serial.PARITY_ODD",
+        "stopbits=serial.STOPBITS_ONE",
+        '"KRDG? A"',
+        '"KRDG? B"',
+        '"SETP? 1"',
+        '"RAMP? 1"',
+        '"HTR? 1"',
+        "SETP 1,",
+        "RAMP 1,",
+        "COM3",
+    ]:
+        assert snippet in dashboard
+
+    assert "python -m pip install pyserial" in runner
+    assert "python scripts\\ls336_direct_dashboard.py" in readme
+    assert "does not require Linux, WSL, EPICS" in readme
 
 
 def test_ioc_boot_uses_current_epics_host_architecture():
