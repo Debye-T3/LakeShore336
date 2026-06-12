@@ -11,6 +11,7 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 try:
     import serial
@@ -22,6 +23,13 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_BAUD = 57600
 DEFAULT_TIMEOUT = 2.0
+ROOT = Path(__file__).resolve().parents[1]
+RANGE_LABELS = {
+    "0": "Off",
+    "1": "Low",
+    "2": "Medium",
+    "3": "High",
+}
 
 
 class LakeShoreSerialClient:
@@ -67,6 +75,8 @@ class LakeShoreSerialClient:
 
     def read_all(self) -> dict[str, str]:
         ramp_enable, ramp_rate = split_ramp(self.query("RAMP? 1"))
+        heater_range_raw = normalize_range(self.query("RANGE? 1"))
+        pid_p, pid_i, pid_d = split_pid(self.query("PID? 1"))
         return {
             "idn": self.query("*IDN?"),
             "cold_head": self.query("KRDG? A"),
@@ -74,6 +84,11 @@ class LakeShoreSerialClient:
             "setpoint": self.query("SETP? 1"),
             "ramp_enable": ramp_enable,
             "ramp_rate": ramp_rate,
+            "heater_range_raw": heater_range_raw,
+            "heater_range": RANGE_LABELS.get(heater_range_raw, heater_range_raw),
+            "pid_p": pid_p,
+            "pid_i": pid_i,
+            "pid_d": pid_d,
             "heater": self.query("HTR? 1"),
             "comm": "Connected",
             "updated": time.strftime("%H:%M:%S"),
@@ -82,6 +97,29 @@ class LakeShoreSerialClient:
     def set_setpoint(self, value: float, ramp_rate: float) -> dict[str, str]:
         if ramp_rate > 0:
             self.write(f"RAMP 1,1,{ramp_rate:.3f}")
+        self.write(f"SETP 1,{value:.3f}")
+        time.sleep(0.2)
+        return self.read_all()
+
+    def set_control(
+        self,
+        value: float,
+        ramp_rate: float,
+        heater_range: int,
+        pid_p: float,
+        pid_i: float,
+        pid_d: float,
+    ) -> dict[str, str]:
+        if heater_range not in (0, 1, 2, 3):
+            raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
+        if not 0 <= value <= 350:
+            raise ValueError("Setpoint must be within 0..350 K")
+        if not 0 <= ramp_rate <= 5:
+            raise ValueError("Ramp rate must be within 0..5 K/min")
+
+        self.write(f"RANGE 1,{heater_range}")
+        self.write(f"PID 1,{pid_p:.3f},{pid_i:.3f},{pid_d:.3f}")
+        self.write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
         self.write(f"SETP 1,{value:.3f}")
         time.sleep(0.2)
         return self.read_all()
@@ -107,6 +145,8 @@ class DemoLakeShoreClient:
         self.setpoint_value = 90.0
         self.ramp_rate = 0.5
         self.ramp_enabled = True
+        self.heater_range = 3
+        self.pid = [40.0, 80.0, 2.0]
         self.last_update = time.monotonic()
 
     def open(self) -> None:
@@ -121,6 +161,11 @@ class DemoLakeShoreClient:
             "setpoint": f"{self.setpoint_value:.3f}",
             "ramp_enable": "On" if self.ramp_enabled else "Off",
             "ramp_rate": f"{self.ramp_rate:.3f}",
+            "heater_range_raw": str(self.heater_range),
+            "heater_range": RANGE_LABELS[str(self.heater_range)],
+            "pid_p": f"{self.pid[0]:.3f}",
+            "pid_i": f"{self.pid[1]:.3f}",
+            "pid_d": f"{self.pid[2]:.3f}",
             "heater": f"{self._heater_output():.1f}",
             "comm": "Demo",
             "updated": time.strftime("%H:%M:%S"),
@@ -130,6 +175,24 @@ class DemoLakeShoreClient:
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
         self.setpoint_value = value
+        return self.read_all()
+
+    def set_control(
+        self,
+        value: float,
+        ramp_rate: float,
+        heater_range: int,
+        pid_p: float,
+        pid_i: float,
+        pid_d: float,
+    ) -> dict[str, str]:
+        if heater_range not in (0, 1, 2, 3):
+            raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
+        self.setpoint_value = value
+        self.ramp_rate = ramp_rate
+        self.ramp_enabled = ramp_rate > 0
+        self.heater_range = heater_range
+        self.pid = [pid_p, pid_i, pid_d]
         return self.read_all()
 
     def step_warmup(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
@@ -155,7 +218,9 @@ class DemoLakeShoreClient:
 
     def _heater_output(self) -> float:
         error = max(0.0, self.setpoint_value - self.cold_head)
-        return min(100.0, error * 8.0 + (10.0 if self.ramp_enabled else 0.0))
+        if self.heater_range == 0:
+            return 0.0
+        return min(100.0, error * 8.0 + self.heater_range * 8.0)
 
 
 def split_ramp(reply: str) -> tuple[str, str]:
@@ -163,6 +228,21 @@ def split_ramp(reply: str) -> tuple[str, str]:
     if len(pieces) != 2:
         return reply, "--"
     return ("On" if pieces[0] == "1" else "Off", pieces[1])
+
+
+def normalize_range(reply: str) -> str:
+    return reply.strip().split(",", 1)[0]
+
+
+def split_pid(reply: str) -> tuple[str, str, str]:
+    pieces = [piece.strip() for piece in reply.split(",")]
+    if len(pieces) != 3:
+        return ("--", "--", "--")
+    return (pieces[0], pieces[1], pieces[2])
+
+
+def dashboard_html() -> str:
+    return (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
 
 def available_ports() -> list[str]:
@@ -313,7 +393,7 @@ loadPorts();setLanguage('en');
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/":
-            self.reply_html(HTML)
+            self.reply_html(dashboard_html())
         elif self.path == "/api/ports":
             self.reply_json({"ports": available_ports()})
         elif self.path == "/api/read":
@@ -331,6 +411,17 @@ class Handler(BaseHTTPRequestHandler):
             self.reply_json(client.read_all())
         elif self.path == "/api/setpoint":
             self.with_client(lambda client: client.set_setpoint(float(body["target"]), float(body["ramp"])))
+        elif self.path == "/api/control":
+            self.with_client(
+                lambda client: client.set_control(
+                    float(body["target"]),
+                    float(body["ramp"]),
+                    int(body["range"]),
+                    float(body["pid_p"]),
+                    float(body["pid_i"]),
+                    float(body["pid_d"]),
+                )
+            )
         elif self.path == "/api/step":
             self.with_client(
                 lambda client: client.step_warmup(

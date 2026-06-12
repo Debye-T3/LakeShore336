@@ -48,13 +48,13 @@ Command-line example:
 python scripts\ls336_direct_dashboard.py --port COM3
 ```
 
-For a browser-based operator panel with demo mode, stability checks, CSV logging, hold/soak, safety warnings, and English/Chinese labels, run:
+For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID settings, rhythm warmup, CSV logging, safety warnings, and English/Chinese labels, run:
 
 ```powershell
 python scripts\ls336_web_dashboard.py
 ```
 
-Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel treats sample temperature as the primary ARPES temperature, applies a stability criterion using configurable tolerance and duration, can hold/soak after the sample is stable, and can download a CSV temperature log.
+Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `RANGE`, `PID`, `RAMP`, and `SETP` commands in one controlled update.
 
 ## Share With Other People
 
@@ -62,7 +62,7 @@ There are two supported sharing modes:
 
 ### Public Demo Website
 
-The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, rhythm warmup, stability checks, hold/soak, safety warnings, and CSV logging.
+The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID values, rhythm warmup, safety warnings, and CSV logging.
 
 Vercel workflow:
 

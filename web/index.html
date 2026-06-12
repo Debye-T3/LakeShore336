@@ -3,113 +3,78 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lake Shore 336 ARPES Temperature Demo</title>
+<title>Lake Shore 336 ARPES Panel</title>
 <style>
-body{margin:0;background:#f4f6fb;color:#172033;font-family:Arial,Helvetica,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:24px}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
-h1{font-size:28px;margin:0}.bar{display:flex;gap:8px;align-items:center}
-select,input,button{font:inherit;border:1px solid #cbd5e1;border-radius:6px;padding:8px 10px;background:white;color:#172033}
-button{cursor:pointer;background:#2563eb;color:white;border-color:#2563eb;font-weight:700}
-button.secondary{background:#e2e8f0;color:#172033;border-color:#cbd5e1}
-.grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}.cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:16px 0}
-.card,.panel{background:white;border:1px solid #dbe3ef;border-radius:8px;padding:16px}.panel{margin-top:16px}
-.label{color:#64748b;font-size:13px}.temp{font-size:46px;font-weight:800;margin-top:6px}.value{font-size:20px;font-weight:800;margin-top:6px}
-.controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}.controls.three{grid-template-columns:repeat(3,minmax(0,1fr))}
-.status{margin-top:14px;color:#475569}.ok{color:#15803d}.bad{color:#b91c1c}.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}.good{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
-@media(max-width:900px){.grid,.cards,.controls,.controls.three{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+:root{--bg:#18232b;--panel:#22313b;--panel2:#1c2932;--cyan:#26e6ff;--pink:#ff8fb1;--green:#b6f59e;--yellow:#ffe29a;--text:#e8f4f7;--muted:#91a8b3;--line:#35cde8;--danger:#ff5c7a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}main{max-width:1180px;margin:0 auto;padding:18px}header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.title{font-size:24px;font-weight:800;letter-spacing:.5px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}select,input,button{font:inherit;border:1px solid #45616e;border-radius:4px;padding:8px 10px;background:#17252d;color:var(--text)}button{cursor:pointer;background:#276577;border-color:var(--cyan);color:#eaffff;font-weight:800}button.secondary{background:#33454f;color:#e8f4f7;border-color:#59717c}button.danger{background:#5a202d;border-color:var(--danger)}.layout{display:grid;grid-template-columns:330px 1fr;gap:14px}.panel{background:var(--panel);border:2px solid var(--line);border-radius:6px;padding:14px;box-shadow:0 0 12px rgba(38,230,255,.12)}.status{background:#b8f7a8;color:#17311d;text-align:center;font-size:30px;font-weight:900;border-radius:6px;padding:16px;margin-bottom:12px}.metric{background:var(--panel2);border-left:4px solid var(--cyan);padding:12px;margin:10px 0}.metric.sample{border-left-color:var(--pink)}.label{color:var(--muted);font-size:13px;font-weight:800;text-transform:uppercase}.temp{font-size:34px;font-weight:900;margin-top:8px;color:var(--cyan)}.metric.sample .temp{color:var(--pink)}canvas{width:100%;height:260px;background:#253640;border:1px solid #4b6773;border-radius:4px}.section-title{font-size:20px;color:var(--yellow);font-weight:900;margin:0 0 10px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{color:var(--cyan);font-weight:800;font-size:13px}.readback{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.readback div{background:var(--panel2);border:1px solid #3d5965;border-radius:4px;padding:10px}.readback strong{display:block;color:var(--green);font-size:21px;margin-top:4px}.pid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px}.logbox{height:100px;overflow:auto;background:#142027;border:1px solid #3d5965;color:var(--green);padding:10px;font-family:Menlo,Consolas,monospace;font-size:13px}.warning{margin-top:10px;padding:10px;border:1px solid #7e5e26;background:#302815;color:#ffd68a}.ok{color:var(--green)}.bad{color:var(--danger)}@media(max-width:900px){.layout,.grid,.readback{grid-template-columns:1fr}.toolbar{justify-content:flex-start}}
 </style>
 </head>
 <body>
 <main>
 <header>
-  <h1 data-i18n="title">Lake Shore 336 ARPES Temperature Demo</h1>
-  <div class="bar">
-    <select id="language" onchange="setLanguage(this.value)"><option value="en">English</option><option value="zh">中文</option></select>
-    <button onclick="connect()" data-i18n="connect">Connect Demo</button>
-    <button class="secondary" onclick="refresh()" data-i18n="refresh">Refresh</button>
-  </div>
+  <div class="title" data-i18n="title">Lake Shore 336 ARPES Temp Control</div>
+  <div class="toolbar"><select id="language" onchange="setLanguage(this.value)"><option value="en">English</option><option value="zh">中文</option></select><select id="port"></select><button onclick="connect()" data-i18n="connect">CONNECT</button><button class="secondary" onclick="refresh()" data-i18n="refresh">READ</button></div>
 </header>
-<section class="grid">
-  <div class="card"><div class="label" data-i18n="sample">Sample</div><div class="temp"><span id="sample">--</span> K</div></div>
-  <div class="card"><div class="label" data-i18n="coldHead">Cold Head</div><div class="temp"><span id="cold_head">--</span> K</div></div>
-</section>
-<section class="cards">
-  <div class="card"><div class="label" data-i18n="setpoint">Setpoint</div><div class="value"><span id="setpoint">--</span> K</div></div>
-  <div class="card"><div class="label" data-i18n="ramp">Ramp</div><div class="value" id="ramp_enable">--</div></div>
-  <div class="card"><div class="label" data-i18n="rampRate">Ramp Rate</div><div class="value"><span id="ramp_rate">--</span> K/min</div></div>
-  <div class="card"><div class="label" data-i18n="heater">Heater</div><div class="value"><span id="heater">--</span> %</div></div>
-  <div class="card"><div class="label" data-i18n="comm">Comm</div><div class="value" id="comm">--</div></div>
-  <div class="card"><div class="label" data-i18n="stable">Stable</div><div class="value" id="stable_state">--</div></div>
-</section>
-<section class="panel">
-  <h2 data-i18n="control">Temperature Control</h2>
-  <div class="controls">
-    <label><span data-i18n="setpointK">Setpoint K</span><br><input id="target" value="90" type="number" step="0.1"></label>
-    <label><span data-i18n="rampKmin">Ramp K/min</span><br><input id="ramp" value="0.5" type="number" step="0.1"></label>
-    <button onclick="setpoint()" data-i18n="applySetpoint">Apply Setpoint</button>
-    <button class="secondary" onclick="refresh()" data-i18n="readBack">Read Back</button>
-  </div>
-</section>
-<section class="panel">
-  <h2 data-i18n="rhythm">Rhythm Warmup</h2>
-  <div class="controls">
-    <label><span data-i18n="warmTarget">Warmup Target K</span><br><input id="warm_target" value="100" type="number" step="0.1"></label>
-    <label><span data-i18n="stepK">Step K</span><br><input id="step" value="5" type="number" step="0.1"></label>
-    <label><span data-i18n="rhythmInterval">Rhythm Interval min</span><br><input id="interval" value="5" type="number" step="0.1"></label>
-    <div><button onclick="oneStep()" data-i18n="advance">Advance One Step</button> <button class="secondary" onclick="toggleRhythm()" id="rhythm_button" data-i18n="startRhythm">Start Rhythm</button></div>
-  </div>
-</section>
-<section class="panel">
-  <h2 data-i18n="stability">Stability / Hold</h2>
-  <div class="controls">
-    <label><span data-i18n="stableTol">Stable tolerance K</span><br><input id="stable_tol" value="0.2" type="number" step="0.05"></label>
-    <label><span data-i18n="stableMin">Stable duration min</span><br><input id="stable_min" value="2" type="number" step="0.5"></label>
-    <label><span data-i18n="holdMin">Hold / soak min</span><br><input id="hold_min" value="10" type="number" step="1"></label>
-    <div><button onclick="startHold()" data-i18n="startHold">Start Hold</button> <button class="secondary" onclick="stopHold()" data-i18n="stopHold">Stop Hold</button></div>
-  </div>
-  <div class="status" id="hold_status" data-i18n="holdReady">Hold is idle.</div>
-</section>
-<section class="panel">
-  <h2 data-i18n="logging">CSV Logging</h2>
-  <div class="controls three">
-    <button onclick="startLog()" data-i18n="startLog">Start Log</button>
-    <button class="secondary" onclick="stopLog()" data-i18n="stopLog">Stop Log</button>
-    <button class="secondary" onclick="downloadCsv()" data-i18n="downloadCsv">Download CSV</button>
-  </div>
-  <div class="status" id="log_status">0 rows</div>
-</section>
-<section class="panel warn" id="warning_panel"><strong data-i18n="warnings">Safety warnings</strong><div id="warnings">--</div></section>
-<section class="panel"><div class="label" data-i18n="instrumentId">Instrument ID</div><div id="idn">--</div><div class="status" id="status" data-i18n="ready">Ready. Connect to demo mode.</div></section>
+<div class="layout">
+  <aside>
+    <div class="status" id="connect_state">DISCONNECTED</div>
+    <div class="panel">
+      <div class="metric"><div class="label" data-i18n="coldHead">Cold Head Temp</div><div class="temp"><span id="cold_head">--</span> K</div></div>
+      <div class="metric sample"><div class="label" data-i18n="sample">Sample Stage Temp</div><div class="temp"><span id="sample">--</span> K</div></div>
+      <canvas id="chart" width="600" height="260"></canvas>
+    </div>
+  </aside>
+  <section>
+    <div class="panel">
+      <h2 class="section-title" data-i18n="control">Temperature Control</h2>
+      <div class="readback">
+        <div><span class="label" data-i18n="setpoint">Setpoint</span><strong><span id="setpoint">--</span> K</strong></div>
+        <div><span class="label" data-i18n="rampRate">Ramp</span><strong><span id="ramp_rate">--</span> K/min</strong></div>
+        <div><span class="label" data-i18n="heaterRange">Heater Range</span><strong id="heater_range">--</strong></div>
+        <div><span class="label" data-i18n="heater">Heater</span><strong><span id="heater">--</span> %</strong></div>
+      </div>
+      <div class="grid">
+        <div class="field"><label data-i18n="setpointK">Setpoint (K)</label><input id="target" type="number" value="90" step="0.1"></div>
+        <div class="field"><label data-i18n="rampKmin">Ramp (K/min)</label><input id="ramp" type="number" value="0.5" step="0.1"></div>
+        <div class="field"><label data-i18n="heaterRange">Heater Range</label><select id="range"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3" selected>High</option></select></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>PID</label><div class="pid"><input id="pid_p" type="number" value="40" step="0.1" placeholder="P"><input id="pid_i" type="number" value="80" step="0.1" placeholder="I"><input id="pid_d" type="number" value="2" step="0.1" placeholder="D"></div></div>
+      <div class="actions"><button onclick="applyControl()" data-i18n="apply">APPLY</button><button class="danger" onclick="turnOff()" data-i18n="off">OFF</button><label><input id="enable_ramp" type="checkbox" checked> <span data-i18n="enableRamp">Enable ramp</span></label><span id="stable_state" class="ok">--</span></div>
+      <div class="warning" id="warnings">--</div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2 class="section-title" data-i18n="experiment">Experiment Tools</h2>
+      <div class="grid">
+        <div class="field"><label data-i18n="stepK">Step K</label><input id="step" type="number" value="5" step="0.1"></div>
+        <div class="field"><label data-i18n="rhythmInterval">Rhythm min</label><input id="interval" type="number" value="5" step="0.1"></div>
+        <div class="field"><label data-i18n="stableTol">Stable ±K</label><input id="stable_tol" type="number" value="0.2" step="0.05"></div>
+      </div>
+      <div class="actions"><button onclick="oneStep()" data-i18n="advance">STEP</button><button class="secondary" onclick="toggleRhythm()" id="rhythm_button" data-i18n="startRhythm">START RHYTHM</button><button class="secondary" onclick="startLog()" data-i18n="startLog">LOG</button><button class="secondary" onclick="downloadCsv()" data-i18n="downloadCsv">CSV</button></div>
+      <div class="logbox" id="system_log"></div>
+    </div>
+  </section>
+</div>
 </main>
 <script>
-let demo={idn:'DEMO,Lake Shore 336,ARPES-PUBLIC-DEMO,1.0',cold:82.4,sample:84.1,setpoint:90,ramp:0.5,rampOn:true,last:performance.now()};
-let timer=null,autoTimer=null,logEnabled=false,logRows=[],lastData={},stableSince=null,holdActive=false,language='en';
-const tr={
-en:{title:'Lake Shore 336 ARPES Temperature Demo',connect:'Connect Demo',refresh:'Refresh',sample:'Sample',coldHead:'Cold Head',setpoint:'Setpoint',ramp:'Ramp',rampRate:'Ramp Rate',heater:'Heater',comm:'Comm',stable:'Stable',control:'Temperature Control',setpointK:'Setpoint K',rampKmin:'Ramp K/min',applySetpoint:'Apply Setpoint',readBack:'Read Back',rhythm:'Rhythm Warmup',warmTarget:'Warmup Target K',stepK:'Step K',rhythmInterval:'Rhythm Interval min',advance:'Advance One Step',startRhythm:'Start Rhythm',stopRhythm:'Stop Rhythm',stability:'Stability / Hold',stableTol:'Stable tolerance K',stableMin:'Stable duration min',holdMin:'Hold / soak min',startHold:'Start Hold',stopHold:'Stop Hold',holdReady:'Hold is idle.',logging:'CSV Logging',startLog:'Start Log',stopLog:'Stop Log',downloadCsv:'Download CSV',warnings:'Safety warnings',instrumentId:'Instrument ID',ready:'Ready. Connect to demo mode.',updated:'Updated',stableNow:'Stable',notStable:'Not stable',logStarted:'Log running',logStopped:'Log stopped',holdWaiting:'Hold waiting for stable temperature',holdRunning:'Hold running',holdDone:'Hold complete',noWarnings:'No warnings',demoHint:'Public demo mode connected'},
-zh:{title:'Lake Shore 336 ARPES 温控演示',connect:'连接演示',refresh:'刷新',sample:'样品温度',coldHead:'冷头温度',setpoint:'设定温度',ramp:'升温开关',rampRate:'升温速率',heater:'加热输出',comm:'通信',stable:'稳定',control:'温度控制',setpointK:'设定温度 K',rampKmin:'升温速率 K/min',applySetpoint:'应用设定',readBack:'读回',rhythm:'节奏升温',warmTarget:'升温目标 K',stepK:'每步 K',rhythmInterval:'节奏间隔 min',advance:'前进一步',startRhythm:'开始节奏',stopRhythm:'停止节奏',stability:'稳定判据 / 保温',stableTol:'稳定容差 K',stableMin:'稳定持续 min',holdMin:'保温 min',startHold:'开始保温',stopHold:'停止保温',holdReady:'保温未启动。',logging:'CSV 日志',startLog:'开始记录',stopLog:'停止记录',downloadCsv:'下载 CSV',warnings:'安全提醒',instrumentId:'仪器 ID',ready:'准备好。连接演示模式。',updated:'已更新',stableNow:'已稳定',notStable:'未稳定',logStarted:'正在记录',logStopped:'记录已停止',holdWaiting:'等待温度稳定后开始保温',holdRunning:'正在保温',holdDone:'保温完成',noWarnings:'没有提醒',demoHint:'公开演示模式已连接'}
-};
-function number(id){return Number(document.getElementById(id).value)}function t(k){return tr[language][k]||tr.en[k]||k}
-function setLanguage(lang){language=lang;document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));document.getElementById('rhythm_button').textContent=timer?t('stopRhythm'):t('startRhythm');updateStable();updateWarnings();updateHold()}
-function showStatus(msg,bad=false){const el=document.getElementById('status');el.textContent=msg;el.className=bad?'status bad':'status ok'}
-function simulate(){const now=performance.now(),dt=Math.min(10,(now-demo.last)/1000);demo.last=now;const rate=Math.max(demo.ramp,0.1)/60;for(const key of ['cold','sample']){const lag=key==='sample'?0.65:1;const delta=demo.setpoint-demo[key];const max=rate*dt*lag;demo[key]+=Math.max(-max,Math.min(max,delta))}const heater=Math.min(100,Math.max(0,demo.setpoint-demo.cold)*8+(demo.rampOn?10:0));return{idn:demo.idn,cold_head:demo.cold.toFixed(3),sample:demo.sample.toFixed(3),setpoint:demo.setpoint.toFixed(3),ramp_enable:demo.rampOn?'On':'Off',ramp_rate:demo.ramp.toFixed(3),heater:heater.toFixed(1),comm:'Public Demo',updated:new Date().toLocaleTimeString()}}
-function update(data){lastData={...lastData,...data};for(const [k,v] of Object.entries(data)){const el=document.getElementById(k);if(el)el.textContent=v||'--'}updateStable();updateWarnings();updateHold();if(logEnabled)appendLog();if(data.updated)showStatus(t('updated')+' '+data.updated)}
-function connect(){update(simulate());showStatus(t('demoHint'));startAutoRefresh()}function refresh(){update(simulate())}
-function setpoint(){demo.ramp=number('ramp');demo.rampOn=demo.ramp>0;demo.setpoint=number('target');refresh()}
-function oneStep(){demo.ramp=number('ramp');demo.rampOn=demo.ramp>0;demo.setpoint=Math.min(demo.setpoint+number('step'),number('warm_target'));refresh();if(demo.setpoint>=number('warm_target'))stopRhythm()}
-function toggleRhythm(){timer?stopRhythm():startRhythm()}function startRhythm(){oneStep();timer=setInterval(oneStep,Math.max(1000,number('interval')*60*1000));document.getElementById('rhythm_button').textContent=t('stopRhythm')}function stopRhythm(){if(timer)clearInterval(timer);timer=null;document.getElementById('rhythm_button').textContent=t('startRhythm')}
-function startAutoRefresh(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}
-function isStable(){const sample=Number(lastData.sample),setp=Number(lastData.setpoint),tol=number('stable_tol');return Number.isFinite(sample)&&Number.isFinite(setp)&&Math.abs(sample-setp)<=tol}
-function updateStable(){const el=document.getElementById('stable_state');if(!lastData.sample){el.textContent='--';return}if(isStable()){if(!stableSince)stableSince=Date.now();const mins=(Date.now()-stableSince)/60000;el.textContent=mins>=number('stable_min')?t('stableNow'):mins.toFixed(1)+' min'}else{stableSince=null;el.textContent=t('notStable')}}
-function stableLongEnough(){return stableSince&&(Date.now()-stableSince)/60000>=number('stable_min')}
-function startHold(){holdActive=true;setpoint();updateHold()}function stopHold(){holdActive=false;delete document.getElementById('hold_status').dataset.start;document.getElementById('hold_status').textContent=t('holdReady')}
-function updateHold(){const el=document.getElementById('hold_status');if(!holdActive)return;if(!stableLongEnough()){el.textContent=t('holdWaiting');return}if(!el.dataset.start)el.dataset.start=String(Date.now());const remain=number('hold_min')-(Date.now()-Number(el.dataset.start))/60000;if(remain<=0){holdActive=false;delete el.dataset.start;el.textContent=t('holdDone')}else el.textContent=t('holdRunning')+': '+remain.toFixed(1)+' min left'}
-function warnings(){const out=[];const setp=number('target'),ramp=number('ramp'),heater=Number(lastData.heater),sample=Number(lastData.sample);if(setp>350)out.push('Setpoint > 350 K');if(ramp>5)out.push('Ramp > 5 K/min');if(heater>85)out.push('Heater output high: '+heater.toFixed(1)+'%');if(sample>350)out.push('Sample > 350 K');return out}
-function updateWarnings(){const items=warnings(),panel=document.getElementById('warning_panel');document.getElementById('warnings').textContent=items.length?items.join('; '):t('noWarnings');panel.className=items.length?'panel warn':'panel good'}
-function startLog(){logEnabled=true;document.getElementById('log_status').textContent=t('logStarted')+', '+logRows.length+' rows'}function stopLog(){logEnabled=false;document.getElementById('log_status').textContent=t('logStopped')+', '+logRows.length+' rows'}
-function appendLog(){const row=[new Date().toISOString(),lastData.cold_head,lastData.sample,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater,lastData.comm,document.getElementById('stable_state').textContent];logRows.push(row);document.getElementById('log_status').textContent=(logEnabled?t('logStarted'):t('logStopped'))+', '+logRows.length+' rows'}
-function downloadCsv(){const head=['timestamp','cold_head_K','sample_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_percent','comm','stable_state'];const csv=[head,...logRows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_public_demo_log.csv';a.click();URL.revokeObjectURL(a.href)}
-setLanguage('en');
+let backend=false,timer=null,autoTimer=null,logRows=[],logEnabled=false,lang='en',lastData={},history=[];let demo={cold:82.4,sample:84.1,setpoint:90,ramp:.5,range:3,pid:[40,80,2],last:performance.now()};
+const rangeNames=['Off','Low','Medium','High'];
+const tr={en:{title:'Lake Shore 336 ARPES Temp Control',connect:'CONNECT',refresh:'READ',coldHead:'Cold Head Temp',sample:'Sample Stage Temp',control:'Temperature Control',setpoint:'Setpoint',rampRate:'Ramp',heaterRange:'Heater Range',heater:'Heater',setpointK:'Setpoint (K)',rampKmin:'Ramp (K/min)',apply:'APPLY',off:'OFF',enableRamp:'Enable ramp',experiment:'Experiment Tools',stepK:'Step K',rhythmInterval:'Rhythm min',stableTol:'Stable ±K',advance:'STEP',startRhythm:'START RHYTHM',stopRhythm:'STOP RHYTHM',startLog:'LOG',downloadCsv:'CSV',connected:'CONNECTED',disconnected:'DISCONNECTED',noWarnings:'No warnings',notStable:'Not stable',stable:'Stable'},zh:{title:'Lake Shore 336 ARPES 温控',connect:'连接',refresh:'读取',coldHead:'冷头温度',sample:'样品台温度',control:'温度控制',setpoint:'设定温度',rampRate:'升温速率',heaterRange:'加热档位',heater:'加热输出',setpointK:'设定温度 (K)',rampKmin:'升温速率 (K/min)',apply:'应用',off:'关闭',enableRamp:'启用升温',experiment:'实验工具',stepK:'每步 K',rhythmInterval:'节奏 min',stableTol:'稳定 ±K',advance:'前进一步',startRhythm:'开始节奏',stopRhythm:'停止节奏',startLog:'记录',downloadCsv:'CSV',connected:'已连接',disconnected:'未连接',noWarnings:'无警告',notStable:'未稳定',stable:'已稳定'}};
+function t(k){return tr[lang][k]||tr.en[k]||k}function number(id){return Number(document.getElementById(id).value)}function setLanguage(v){lang=v;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));document.getElementById('rhythm_button').textContent=timer?t('stopRhythm'):t('startRhythm');document.getElementById('connect_state').textContent=lastData.comm?t('connected'):t('disconnected');updateWarnings()}
+async function api(path,body){const res=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!res.ok)throw new Error((await res.json()).error||res.statusText);return res.json()}
+function log(m){const el=document.getElementById('system_log');el.innerHTML='['+new Date().toLocaleTimeString()+'] '+m+'<br>'+el.innerHTML}
+async function loadPorts(){try{const d=await api('/api/ports');backend=true;fillPorts(d.ports)}catch{backend=false;fillPorts(['DEMO'])}}function fillPorts(ports){const s=document.getElementById('port');s.innerHTML='';ports.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o)})}
+async function connect(){try{const d=backend?await api('/api/connect',{port:document.getElementById('port').value}):simulate();update(d);document.getElementById('connect_state').textContent=t('connected');startAuto();log('CONNECTED')}catch(e){log('ERROR '+e.message)}}
+async function refresh(){try{update(backend?await api('/api/read'):simulate())}catch(e){log('ERROR '+e.message)}}
+async function applyControl(){const body={target:number('target'),ramp:document.getElementById('enable_ramp').checked?number('ramp'):0,range:Number(document.getElementById('range').value),pid_p:number('pid_p'),pid_i:number('pid_i'),pid_d:number('pid_d')};try{update(backend?await api('/api/control',body):demoControl(body));log('APPLY setpoint='+body.target+' range='+rangeNames[body.range]+' PID='+body.pid_p+','+body.pid_i+','+body.pid_d)}catch(e){log('ERROR '+e.message)}}
+function turnOff(){document.getElementById('range').value='0';document.getElementById('enable_ramp').checked=false;applyControl()}
+function oneStep(){document.getElementById('target').value=Math.min(number('target')+number('step'),350);applyControl()}function toggleRhythm(){if(timer){clearInterval(timer);timer=null;document.getElementById('rhythm_button').textContent=t('startRhythm')}else{oneStep();timer=setInterval(oneStep,Math.max(1000,number('interval')*60000));document.getElementById('rhythm_button').textContent=t('stopRhythm')}}
+function demoControl(b){demo.setpoint=b.target;demo.ramp=b.ramp;demo.range=b.range;demo.pid=[b.pid_p,b.pid_i,b.pid_d];return simulate()}function simulate(){const now=performance.now(),dt=Math.min(10,(now-demo.last)/1000);demo.last=now;const r=Math.max(demo.ramp,.1)/60;for(const k of ['cold','sample']){const lag=k==='sample'?.65:1,delta=demo.setpoint-demo[k],max=r*dt*lag;demo[k]+=Math.max(-max,Math.min(max,delta))}const heater=demo.range===0?0:Math.min(100,Math.max(0,demo.setpoint-demo.cold)*8+demo.range*8);return{idn:'DEMO,Lake Shore 336,ARPES,1.0',cold_head:demo.cold.toFixed(3),sample:demo.sample.toFixed(3),setpoint:demo.setpoint.toFixed(3),ramp_rate:demo.ramp.toFixed(3),heater_range:rangeNames[demo.range],heater_range_raw:String(demo.range),pid_p:String(demo.pid[0]),pid_i:String(demo.pid[1]),pid_d:String(demo.pid[2]),heater:heater.toFixed(1),comm:'Demo',updated:new Date().toLocaleTimeString()}}
+function update(d){lastData={...lastData,...d};['cold_head','sample','setpoint','ramp_rate','heater','heater_range'].forEach(k=>{const el=document.getElementById(k);if(el)el.textContent=d[k]??lastData[k]??'--'});if(d.heater_range_raw)document.getElementById('range').value=d.heater_range_raw;if(d.pid_p)document.getElementById('pid_p').value=d.pid_p;if(d.pid_i)document.getElementById('pid_i').value=d.pid_i;if(d.pid_d)document.getElementById('pid_d').value=d.pid_d;history.push({t:new Date(),cold:Number(lastData.cold_head),sample:Number(lastData.sample)});history=history.slice(-80);drawChart();updateStable();updateWarnings();if(logEnabled)appendLog()}
+function updateStable(){const stable=Math.abs(Number(lastData.sample)-Number(lastData.setpoint))<=number('stable_tol');document.getElementById('stable_state').textContent=lastData.sample?(stable?t('stable'):t('notStable')):'--';document.getElementById('stable_state').className=stable?'ok':'bad'}
+function updateWarnings(){const w=[];if(number('target')>350)w.push('Setpoint > 350 K');if(number('ramp')>5)w.push('Ramp > 5 K/min');if(Number(lastData.heater)>85)w.push('Heater high '+lastData.heater+'%');document.getElementById('warnings').textContent=w.length?w.join('; '):t('noWarnings')}
+function drawChart(){const c=document.getElementById('chart'),x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);x.strokeStyle='#3e5965';for(let i=0;i<5;i++){let y=20+i*50;x.beginPath();x.moveTo(40,y);x.lineTo(580,y);x.stroke()}function line(key,color){x.strokeStyle=color;x.lineWidth=3;x.beginPath();history.forEach((p,i)=>{let xx=40+i*(540/Math.max(1,history.length-1)),yy=230-(p[key]-20)*3;if(i)x.lineTo(xx,yy);else x.moveTo(xx,yy)});x.stroke()}line('cold','#26e6ff');line('sample','#ff8fb1');x.fillStyle='#e8f4f7';x.fillText('Cold Head / Sample',45,24)}
+function startAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}function startLog(){logEnabled=!logEnabled;log(logEnabled?'LOG START':'LOG STOP')}function appendLog(){logRows.push([new Date().toISOString(),lastData.cold_head,lastData.sample,lastData.setpoint,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d])}function downloadCsv(){const head=['timestamp','cold_head_K','sample_K','setpoint_K','ramp_K_min','heater_range','heater_percent','pid_p','pid_i','pid_d'];const csv=[head,...logRows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_arpes_log.csv';a.click();URL.revokeObjectURL(a.href)}
+loadPorts();setLanguage('en');
 </script>
 </body>
 </html>
