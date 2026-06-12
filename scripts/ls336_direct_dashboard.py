@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -20,6 +22,10 @@ except ImportError:  # pragma: no cover - exercised by users without pyserial.
 
 DEFAULT_BAUD = 57600
 DEFAULT_TIMEOUT = 2.0
+APP_BG = "#f5f7fb"
+CARD_BG = "#ffffff"
+TEXT = "#1f2937"
+MUTED = "#4b5563"
 
 
 class LakeShoreSerialClient:
@@ -141,15 +147,28 @@ class DirectDashboard(tk.Tk):
 
         self.title("Lake Shore 336 Direct Dashboard")
         self.minsize(800, 560)
+        self.configure(bg=APP_BG)
         self._build_ui(port)
+        self.after(250, self._bring_to_front)
         self._poll_worker_results()
 
     def _build_ui(self, initial_port: str | None) -> None:
         style = ttk.Style(self)
-        style.configure("Header.TLabel", font=("Arial", 18, "bold"))
-        style.configure("Temp.TLabel", font=("Arial", 34, "bold"))
-        style.configure("CardTitle.TLabel", font=("Arial", 11))
-        style.configure("CardValue.TLabel", font=("Arial", 14, "bold"))
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+        style.configure(".", background=APP_BG, foreground=TEXT)
+        style.configure("TFrame", background=APP_BG)
+        style.configure("TLabel", background=APP_BG, foreground=TEXT)
+        style.configure("TLabelframe", background=APP_BG, foreground=TEXT)
+        style.configure("TLabelframe.Label", background=APP_BG, foreground=TEXT)
+        style.configure("TButton", padding=(10, 5), background="#e5e7eb", foreground=TEXT)
+        style.configure("TEntry", fieldbackground=CARD_BG, foreground=TEXT)
+        style.configure("TCombobox", fieldbackground=CARD_BG, foreground=TEXT)
+        style.configure("Header.TLabel", font=("Arial", 18, "bold"), background=APP_BG, foreground=TEXT)
+        style.configure("Temp.TLabel", font=("Arial", 34, "bold"), background=CARD_BG, foreground=TEXT)
+        style.configure("Card.TFrame", background=CARD_BG, relief="solid")
+        style.configure("CardTitle.TLabel", font=("Arial", 11), background=CARD_BG, foreground=MUTED)
+        style.configure("CardValue.TLabel", font=("Arial", 14, "bold"), background=CARD_BG, foreground=TEXT)
         style.configure("Action.TButton", font=("Arial", 11, "bold"))
 
         root = ttk.Frame(self, padding=18)
@@ -255,14 +274,14 @@ class DirectDashboard(tk.Tk):
         ttk.Label(root, textvariable=self.status).pack(fill="x", pady=(8, 0))
 
     def _temperature_card(self, parent: ttk.Frame, title: str, variable: tk.StringVar) -> ttk.Frame:
-        card = ttk.Frame(parent, padding=16, relief="solid")
+        card = ttk.Frame(parent, padding=16, style="Card.TFrame")
         ttk.Label(card, text=title, style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(card, textvariable=variable, style="Temp.TLabel").pack(anchor="w")
-        ttk.Label(card, text="K").pack(anchor="w")
+        ttk.Label(card, text="K", style="CardTitle.TLabel").pack(anchor="w")
         return card
 
     def _small_card(self, parent: ttk.Frame, title: str, variable: tk.StringVar) -> ttk.Frame:
-        card = ttk.Frame(parent, padding=10, relief="solid")
+        card = ttk.Frame(parent, padding=10, style="Card.TFrame")
         ttk.Label(card, text=title, style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w")
         return card
@@ -450,8 +469,19 @@ class DirectDashboard(tk.Tk):
             self.after_cancel(self.refresh_after_id)
             self.refresh_after_id = None
 
+    def _bring_to_front(self) -> None:
+        self.lift()
+        self.focus_force()
+        self.attributes("-topmost", True)
+        self.after(1000, lambda: self.attributes("-topmost", False))
+
 
 def available_ports() -> list[str]:
+    if sys.platform == "darwin":
+        ports = sorted(glob.glob("/dev/cu.*"))
+        return [port for port in ports if "Bluetooth" not in port]
+    if not sys.platform.startswith("win"):
+        return sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyS*") + glob.glob("/dev/ttyACM*"))
     if list_ports is None:
         return []
     return [port.device for port in list_ports.comports()]

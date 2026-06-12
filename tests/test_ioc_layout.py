@@ -221,6 +221,7 @@ def test_vscode_tasks_cover_common_ioc_workflows():
 
 def test_windows_direct_dashboard_uses_serial_without_epics():
     dashboard = read("scripts/ls336_direct_dashboard.py")
+    web_dashboard = read("scripts/ls336_web_dashboard.py")
     runner = read("scripts/run_windows_dashboard.bat")
     readme = read("README.md")
 
@@ -258,6 +259,57 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
     assert "does not require Linux, WSL, EPICS" in readme
     assert "Start Rhythm Warmup" in readme
     assert "step size and interval" in readme
+
+    for snippet in [
+        "class DemoLakeShoreClient",
+        "DEMO",
+        "Lake Shore 336 browser dashboard",
+        "Stability / Hold",
+        "CSV Logging",
+        "Safety warnings",
+        "中文",
+        "stable_tol",
+        "hold_min",
+        "downloadCsv",
+        "ls336_temperature_log.csv",
+        "warnings()",
+        "Start Rhythm",
+        "Advance One Step",
+        "warmup_done",
+        "threading.RLock",
+    ]:
+        assert snippet in web_dashboard
+
+
+def test_public_demo_site_documents_safe_sharing_workflow():
+    demo = read("web/index.html")
+    vercel = read("vercel.json")
+    readme = read("README.md")
+
+    for snippet in [
+        "Lake Shore 336 ARPES Temperature Demo",
+        "Connect Demo",
+        "Public Demo",
+        "Stability / Hold",
+        "CSV Logging",
+        "Safety warnings",
+        "中文",
+        "ls336_public_demo_log.csv",
+    ]:
+        assert snippet in demo
+
+    assert '"/web/index.html"' in vercel
+
+    for snippet in [
+        "Public Demo Website",
+        "Vercel",
+        "web/index.html",
+        "Real Instrument On The Lab Network",
+        "python3 scripts/ls336_web_dashboard.py --host 0.0.0.0 --port 8765",
+        "http://<lab-computer-ip>:8765",
+        "Do not expose the real instrument control panel directly to the public internet",
+    ]:
+        assert snippet in readme
 
 
 def test_ioc_boot_uses_current_epics_host_architecture():

@@ -48,6 +48,51 @@ Command-line example:
 python scripts\ls336_direct_dashboard.py --port COM3
 ```
 
+For a browser-based operator panel with demo mode, stability checks, CSV logging, hold/soak, safety warnings, and English/Chinese labels, run:
+
+```powershell
+python scripts\ls336_web_dashboard.py
+```
+
+Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel treats sample temperature as the primary ARPES temperature, applies a stability criterion using configurable tolerance and duration, can hold/soak after the sample is stable, and can download a CSV temperature log.
+
+## Share With Other People
+
+There are two supported sharing modes:
+
+### Public Demo Website
+
+The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, rhythm warmup, stability checks, hold/soak, safety warnings, and CSV logging.
+
+Vercel workflow:
+
+1. Push this repository to GitHub.
+2. In Vercel, import `Debye-T3/LakeShore336`.
+3. Keep the default static deployment settings; `vercel.json` rewrites traffic to `web/index.html`.
+4. Share the Vercel URL with collaborators.
+
+### Real Instrument On The Lab Network
+
+Run the browser dashboard on the computer physically connected to the Lake Shore 336:
+
+```bash
+python3 scripts/ls336_web_dashboard.py --host 0.0.0.0 --port 8765
+```
+
+Find that computer's local IP address:
+
+```bash
+ipconfig getifaddr en0
+```
+
+People on the same lab network can then open:
+
+```text
+http://<lab-computer-ip>:8765
+```
+
+Do not expose the real instrument control panel directly to the public internet. Use the Vercel site for public/demo access and the local-network dashboard for real hardware.
+
 ## VS Code and Codex
 
 Open the repository in VS Code:
