@@ -319,6 +319,28 @@ def test_public_demo_site_documents_safe_sharing_workflow():
         assert snippet in readme
 
 
+def test_operator_tutorial_explains_real_and_demo_use():
+    tutorial = read("docs/operator_tutorial_zh.md")
+
+    for snippet in [
+        "Vercel 不能直接连接实验室仪器",
+        "http://127.0.0.1:8765",
+        "python scripts\\ls336_web_dashboard.py",
+        "COM3",
+        "/dev/cu.usbserial",
+        "DEMO",
+        "Heater Range",
+        "Off",
+        "Low",
+        "Medium",
+        "High",
+        "PID",
+        "0.2 或 0.5 K/min",
+        "ls336_arpes_log.csv",
+    ]:
+        assert snippet in tutorial
+
+
 def test_ioc_boot_uses_current_epics_host_architecture():
     boot_makefile = read("iocBoot/iocLS336/Makefile")
     runner = read("scripts/run_ioc.sh")

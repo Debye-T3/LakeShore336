@@ -2,6 +2,8 @@
 
 This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes readback PVs for the cold head and sample temperatures, plus conservative Loop 1 setpoint, ramp, and stepwise warmup controls for higher-level clients and a small visual dashboard.
 
+For an operator-facing Chinese tutorial, see [`docs/operator_tutorial_zh.md`](docs/operator_tutorial_zh.md).
+
 ## Target Setup
 
 - Host: Windows direct dashboard for operator use; Linux/WSL is optional for the EPICS IOC build.
