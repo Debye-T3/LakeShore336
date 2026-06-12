@@ -24,7 +24,21 @@ http://127.0.0.1:8765
 
 办公室电脑如果只能用 Windows，不需要 Linux，也不需要 WSL。
 
-先安装 Python 3。然后打开 PowerShell，进入项目目录：
+最友好的方式是双击项目文件夹里的：
+
+```text
+START_WINDOWS_DASHBOARD.bat
+```
+
+它会自动检查 Python、安装需要的串口库、启动本地网页面板，并打开：
+
+```text
+http://127.0.0.1:8765
+```
+
+使用面板时，不要关闭弹出来的黑色命令窗口。实验结束后，可以在那个窗口里按 `Ctrl+C` 停止服务。
+
+如果想手动运行，也可以先安装 Python 3，然后打开 PowerShell，进入项目目录：
 
 ```powershell
 cd LakeShore336
@@ -33,7 +47,7 @@ cd LakeShore336
 第一次使用需要安装串口库：
 
 ```powershell
-python -m pip install pyserial
+python -m pip install -r requirements.txt
 ```
 
 启动网页面板：
@@ -277,4 +291,3 @@ CSV 里包含：
 - PID 不要随便大幅改。
 - 如果不确定，先点 `OFF`。
 - 不要把真实控制页面暴露到公网。
-

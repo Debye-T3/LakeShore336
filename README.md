@@ -19,17 +19,25 @@ Edit `configure/RELEASE.local` or pass macros at IOC start time if your EPICS mo
 
 If the control computer must stay Windows-only, use the direct serial dashboard. It talks to the Lake Shore 336 over a Windows COM port and does not require Linux, WSL, EPICS, `caget`, or `caput`.
 
-Install Python 3 for Windows, then run:
-
-```powershell
-python -m pip install pyserial
-python scripts\ls336_direct_dashboard.py
-```
-
-Or double-click/run:
+The friendliest path is to double-click this file from the repository folder:
 
 ```bat
-scripts\run_windows_dashboard.bat
+START_WINDOWS_DASHBOARD.bat
+```
+
+It checks Python, installs the required serial package from `requirements.txt`, starts the local web dashboard, and opens `http://127.0.0.1:8765`.
+
+If you prefer commands, install Python 3 for Windows, then run:
+
+```powershell
+python -m pip install -r requirements.txt
+python scripts\ls336_web_dashboard.py
+```
+
+The older Tk direct dashboard is still available:
+
+```powershell
+python scripts\ls336_direct_dashboard.py
 ```
 
 In the dashboard, choose the Lake Shore COM port and click `Connect`. The panel reads the instrument directly and shows cold-head temperature, sample temperature, setpoint readback, ramp state, ramp rate, heater output, and communication status.

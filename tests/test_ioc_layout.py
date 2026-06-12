@@ -223,6 +223,9 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
     dashboard = read("scripts/ls336_direct_dashboard.py")
     web_dashboard = read("scripts/ls336_web_dashboard.py")
     runner = read("scripts/run_windows_dashboard.bat")
+    web_runner = read("scripts/run_web_dashboard_windows.bat")
+    easy_runner = read("START_WINDOWS_DASHBOARD.bat")
+    requirements = read("requirements.txt")
     readme = read("README.md")
 
     for snippet in [
@@ -255,6 +258,14 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
         assert snippet in dashboard
 
     assert "python -m pip install pyserial" in runner
+    assert "pyserial>=3.5" in requirements
+    assert "START_WINDOWS_DASHBOARD.bat" in readme
+    assert "requirements.txt" in readme
+    assert "run_web_dashboard_windows.bat" in easy_runner
+    assert "python.org/downloads" in web_runner
+    assert "pip install -r requirements.txt" in web_runner
+    assert "scripts\\ls336_web_dashboard.py" in web_runner
+    assert "http://127.0.0.1:8765" in web_runner
     assert "python scripts\\ls336_direct_dashboard.py" in readme
     assert "does not require Linux, WSL, EPICS" in readme
     assert "Start Rhythm Warmup" in readme
@@ -324,6 +335,7 @@ def test_operator_tutorial_explains_real_and_demo_use():
 
     for snippet in [
         "Vercel 不能直接连接实验室仪器",
+        "START_WINDOWS_DASHBOARD.bat",
         "http://127.0.0.1:8765",
         "python scripts\\ls336_web_dashboard.py",
         "COM3",
