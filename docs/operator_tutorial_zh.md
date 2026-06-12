@@ -66,16 +66,37 @@ http://127.0.0.1:8765
 
 ## 3. Mac 电脑怎么启动
 
-在 Terminal 里进入项目目录：
+最友好的方式是双击项目文件夹里的：
+
+```text
+START_MAC_DASHBOARD.command
+```
+
+它会自动检查 Python、安装需要的串口库、启动本地网页面板，并打开：
+
+```text
+http://127.0.0.1:8765
+```
+
+如果 macOS 提示不能打开，或者双击没有反应，打开 Terminal 进入项目目录：
 
 ```bash
 cd /Users/cocoyou/LakeShore336
 ```
 
+然后运行一次：
+
+```bash
+chmod +x START_MAC_DASHBOARD.command scripts/run_web_dashboard_mac.sh
+./START_MAC_DASHBOARD.command
+```
+
+如果想手动运行，也可以用：
+
 安装串口库：
 
 ```bash
-python3 -m pip install pyserial
+python3 -m pip install -r requirements.txt
 ```
 
 启动面板：

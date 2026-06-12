@@ -66,6 +66,30 @@ python scripts\ls336_web_dashboard.py
 
 Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `RANGE`, `PID`, `RAMP`, and `SETP` commands in one controlled update.
 
+## Mac Browser Dashboard
+
+On Mac, the friendliest path is to double-click this file from the repository folder:
+
+```text
+START_MAC_DASHBOARD.command
+```
+
+If macOS blocks the file because it is not executable yet, open Terminal in the repository folder and run:
+
+```bash
+chmod +x START_MAC_DASHBOARD.command scripts/run_web_dashboard_mac.sh
+./START_MAC_DASHBOARD.command
+```
+
+The launcher checks Python, installs the required serial package from `requirements.txt`, starts the local web dashboard, and opens `http://127.0.0.1:8765`.
+
+Manual command-line equivalent:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 scripts/ls336_web_dashboard.py
+```
+
 ## Share With Other People
 
 There are two supported sharing modes:
