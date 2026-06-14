@@ -39,13 +39,13 @@ def test_database_enforces_conservative_write_limits():
 
     assert 'field(DRVH, "350")' in db
     assert 'field(HOPR, "350")' in db
-    assert 'field(DRVH, "5")' in db
-    assert 'field(HOPR, "5")' in db
+    assert 'field(DRVH, "10")' in db
+    assert 'field(HOPR, "10")' in db
     assert "validate_setpoint" in db
     assert "validate_ramp_rate" in db
     assert 'field(OUT,  "$(P)ERR PP")' in db
     assert "Setpoint must be within 0..350 K" in db
-    assert "Ramp rate must be within 0..5 K/min" in db
+    assert "Ramp rate must be within 0..10 K/min" in db
 
 
 def test_database_supports_stepwise_warmup_control():
@@ -193,7 +193,7 @@ def test_readme_documents_epics_client_workflow():
         "caput LS336:Loop1:WARMUP:STEP:10K.PROC 1",
         "caput LS336:Loop1:WARMUP:NEXT.PROC 1",
         "350 K",
-        "5 K/min",
+        "10 K/min",
     ]:
         assert snippet in readme
 

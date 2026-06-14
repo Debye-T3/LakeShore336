@@ -140,16 +140,16 @@ record(ao, "$(P)Loop1:RAMP:RATE") {
     field(EGU,  "K/min")
     field(PREC, "3")
     field(DRVL, "0")
-    field(DRVH, "5")
+    field(DRVH, "10")
     field(LOPR, "0")
-    field(HOPR, "5")
+    field(HOPR, "10")
     field(FLNK, "$(P)Loop1:RAMP:RATE:VALIDATE")
 }
 
 record(calcout, "$(P)Loop1:RAMP:RATE:VALIDATE") {
     field(DESC, "validate_ramp_rate")
     field(INPA, "$(P)Loop1:RAMP:RATE NPP NMS")
-    field(CALC, "A>=0&&A<=5")
+    field(CALC, "A>=0&&A<=10")
     field(OOPT, "When Non-zero")
     field(OUT,  "$(P)Loop1:RAMP:WRITE.PROC PP")
     field(FLNK, "$(P)Loop1:RAMP:RATE:INVALID")
@@ -158,14 +158,14 @@ record(calcout, "$(P)Loop1:RAMP:RATE:VALIDATE") {
 record(calcout, "$(P)Loop1:RAMP:RATE:INVALID") {
     field(DESC, "ramp rate limit violation")
     field(INPA, "$(P)Loop1:RAMP:RATE NPP NMS")
-    field(CALC, "A<0||A>5")
+    field(CALC, "A<0||A>10")
     field(OOPT, "When Non-zero")
     field(OUT,  "$(P)ERR:RAMP.PROC PP")
 }
 
 record(stringout, "$(P)ERR:RAMP") {
     field(DESC, "ramp validation message")
-    field(VAL,  "Ramp rate must be within 0..5 K/min")
+    field(VAL,  "Ramp rate must be within 0..10 K/min")
     field(OUT,  "$(P)ERR PP")
 }
 
@@ -178,7 +178,7 @@ record(ao, "$(P)Loop1:RAMP:WRITE") {
     field(EGU,  "K/min")
     field(PREC, "3")
     field(DRVL, "0")
-    field(DRVH, "5")
+    field(DRVH, "10")
 }
 
 record(ai, "$(P)Loop1:RAMP:RATE_RBV") {

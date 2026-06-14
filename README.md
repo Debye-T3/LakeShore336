@@ -161,7 +161,7 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 | `LS336:Loop1:WARMUP:NEXT` | write | Processes one warmup step toward the target by writing `Loop1:SETP`. |
 | `LS336:Loop1:RAMP:ENABLE` | write | Enable or disable Loop 1 ramping. |
 | `LS336:Loop1:RAMP:ENABLE_RBV` | read | Ramp enable state read back from the controller. |
-| `LS336:Loop1:RAMP:RATE` | write | Requested Loop 1 ramp rate in K/min. Limited to 5 K/min. |
+| `LS336:Loop1:RAMP:RATE` | write | Requested Loop 1 ramp rate in K/min. Limited to 10 K/min. |
 | `LS336:Loop1:RAMP:RATE_RBV` | read | Loop 1 ramp rate read back from the controller. |
 | `LS336:Loop1:HTR_RBV` | read | Loop 1 heater output percentage. |
 | `LS336:COMM:STATUS` | read | IOC communication status. |
@@ -174,7 +174,7 @@ The public write PVs use conservative defaults:
 - `LS336:Loop1:SETP` is limited to `350 K`.
 - `LS336:Loop1:WARMUP:TARGET` is limited to `350 K`.
 - `LS336:Loop1:WARMUP:STEP` is limited to `50 K` and defaults to `5 K`.
-- `LS336:Loop1:RAMP:RATE` is limited to `5 K/min`.
+- `LS336:Loop1:RAMP:RATE` is limited to `10 K/min`.
 - The database includes `validate_setpoint` and `validate_ramp_rate` calculation records so limit behavior is explicit in the IOC database.
 
 These limits are intended for first commissioning only. Tighten them for the actual sample, cryostat, and heater configuration before routine use.
