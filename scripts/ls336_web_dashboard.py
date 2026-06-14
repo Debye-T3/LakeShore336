@@ -30,6 +30,14 @@ RANGE_LABELS = {
     "2": "Medium",
     "3": "High",
 }
+INPUT_CHANNELS = ("A", "B", "C", "D")
+
+
+def normalize_input(value: object, default: str = "A") -> str:
+    channel = str(value or default).strip().upper()
+    if channel not in INPUT_CHANNELS:
+        raise ValueError("Input must be A, B, C, or D")
+    return channel
 
 
 class LakeShoreSerialClient:
@@ -41,6 +49,9 @@ class LakeShoreSerialClient:
         self.timeout = timeout
         self._lock = threading.RLock()
         self._serial: serial.Serial | None = None
+        self.cold_input = "A"
+        self.sample_input = "B"
+        self.control_input = "B"
 
     def open(self) -> None:
         with self._lock:
@@ -77,10 +88,18 @@ class LakeShoreSerialClient:
         ramp_enable, ramp_rate = split_ramp(self.query("RAMP? 1"))
         heater_range_raw = normalize_range(self.query("RANGE? 1"))
         pid_p, pid_i, pid_d = split_pid(self.query("PID? 1"))
+        input_values = {channel: self.query(f"KRDG? {channel}") for channel in INPUT_CHANNELS}
         return {
             "idn": self.query("*IDN?"),
-            "cold_head": self.query("KRDG? A"),
-            "sample": self.query("KRDG? B"),
+            "cold_head": input_values[self.cold_input],
+            "sample": input_values[self.sample_input],
+            "input_a": input_values["A"],
+            "input_b": input_values["B"],
+            "input_c": input_values["C"],
+            "input_d": input_values["D"],
+            "cold_input": self.cold_input,
+            "sample_input": self.sample_input,
+            "control_input": self.control_input,
             "setpoint": self.query("SETP? 1"),
             "ramp_enable": ramp_enable,
             "ramp_rate": ramp_rate,
@@ -101,6 +120,12 @@ class LakeShoreSerialClient:
         time.sleep(0.2)
         return self.read_all()
 
+    def set_inputs(self, cold_input: str, sample_input: str, control_input: str) -> dict[str, str]:
+        self.cold_input = normalize_input(cold_input, "A")
+        self.sample_input = normalize_input(sample_input, "B")
+        self.control_input = normalize_input(control_input, self.sample_input)
+        return self.read_all()
+
     def set_control(
         self,
         value: float,
@@ -109,6 +134,9 @@ class LakeShoreSerialClient:
         pid_p: float,
         pid_i: float,
         pid_d: float,
+        cold_input: str | None = None,
+        sample_input: str | None = None,
+        control_input: str | None = None,
     ) -> dict[str, str]:
         if heater_range not in (0, 1, 2, 3):
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
@@ -117,6 +145,14 @@ class LakeShoreSerialClient:
         if not 0 <= ramp_rate <= 10:
             raise ValueError("Ramp rate must be within 0..10 K/min")
 
+        if cold_input is not None:
+            self.cold_input = normalize_input(cold_input, self.cold_input)
+        if sample_input is not None:
+            self.sample_input = normalize_input(sample_input, self.sample_input)
+        if control_input is not None:
+            self.control_input = normalize_input(control_input, self.sample_input)
+
+        self.write(f"CSET 1,{self.control_input},1,1")
         self.write(f"RANGE 1,{heater_range}")
         self.write(f"PID 1,{pid_p:.3f},{pid_i:.3f},{pid_d:.3f}")
         self.write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
@@ -147,6 +183,15 @@ class DemoLakeShoreClient:
         self.ramp_enabled = True
         self.heater_range = 3
         self.pid = [40.0, 80.0, 2.0]
+        self.cold_input = "A"
+        self.sample_input = "B"
+        self.control_input = "B"
+        self.inputs = {
+            "A": 82.4,
+            "B": 84.1,
+            "C": 296.0,
+            "D": 296.0,
+        }
         self.last_update = time.monotonic()
 
     def open(self) -> None:
@@ -156,8 +201,15 @@ class DemoLakeShoreClient:
         self._simulate_temperature()
         return {
             "idn": self.idn,
-            "cold_head": f"{self.cold_head:.3f}",
-            "sample": f"{self.sample:.3f}",
+            "cold_head": f"{self.inputs[self.cold_input]:.3f}",
+            "sample": f"{self.inputs[self.sample_input]:.3f}",
+            "input_a": f"{self.inputs['A']:.3f}",
+            "input_b": f"{self.inputs['B']:.3f}",
+            "input_c": f"{self.inputs['C']:.3f}",
+            "input_d": f"{self.inputs['D']:.3f}",
+            "cold_input": self.cold_input,
+            "sample_input": self.sample_input,
+            "control_input": self.control_input,
             "setpoint": f"{self.setpoint_value:.3f}",
             "ramp_enable": "On" if self.ramp_enabled else "Off",
             "ramp_rate": f"{self.ramp_rate:.3f}",
@@ -177,6 +229,12 @@ class DemoLakeShoreClient:
         self.setpoint_value = value
         return self.read_all()
 
+    def set_inputs(self, cold_input: str, sample_input: str, control_input: str) -> dict[str, str]:
+        self.cold_input = normalize_input(cold_input, "A")
+        self.sample_input = normalize_input(sample_input, "B")
+        self.control_input = normalize_input(control_input, self.sample_input)
+        return self.read_all()
+
     def set_control(
         self,
         value: float,
@@ -185,9 +243,22 @@ class DemoLakeShoreClient:
         pid_p: float,
         pid_i: float,
         pid_d: float,
+        cold_input: str | None = None,
+        sample_input: str | None = None,
+        control_input: str | None = None,
     ) -> dict[str, str]:
         if heater_range not in (0, 1, 2, 3):
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
+        if not 0 <= value <= 350:
+            raise ValueError("Setpoint must be within 0..350 K")
+        if not 0 <= ramp_rate <= 10:
+            raise ValueError("Ramp rate must be within 0..10 K/min")
+        if cold_input is not None:
+            self.cold_input = normalize_input(cold_input, self.cold_input)
+        if sample_input is not None:
+            self.sample_input = normalize_input(sample_input, self.sample_input)
+        if control_input is not None:
+            self.control_input = normalize_input(control_input, self.sample_input)
         self.setpoint_value = value
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
@@ -209,15 +280,18 @@ class DemoLakeShoreClient:
         dt = min(10.0, max(0.0, now - self.last_update))
         self.last_update = now
         rate_per_second = max(self.ramp_rate, 0.1) / 60.0
-        for attr, lag in [("cold_head", 1.0), ("sample", 0.65)]:
-            value = getattr(self, attr)
+        for channel in INPUT_CHANNELS:
+            if channel in ("C", "D"):
+                continue
+            lag = 1.0 if channel == self.control_input else 0.65
+            value = self.inputs[channel]
             delta = self.setpoint_value - value
             max_move = rate_per_second * dt * lag
             move = max(-max_move, min(max_move, delta))
-            setattr(self, attr, value + move)
+            self.inputs[channel] = value + move
 
     def _heater_output(self) -> float:
-        error = max(0.0, self.setpoint_value - self.cold_head)
+        error = max(0.0, self.setpoint_value - self.inputs[self.control_input])
         if self.heater_range == 0:
             return 0.0
         return min(100.0, error * 8.0 + self.heater_range * 8.0)
@@ -411,6 +485,14 @@ class Handler(BaseHTTPRequestHandler):
             self.reply_json(client.read_all())
         elif self.path == "/api/setpoint":
             self.with_client(lambda client: client.set_setpoint(float(body["target"]), float(body["ramp"])))
+        elif self.path == "/api/inputs":
+            self.with_client(
+                lambda client: client.set_inputs(
+                    str(body["cold_input"]),
+                    str(body["sample_input"]),
+                    str(body.get("control_input") or body["sample_input"]),
+                )
+            )
         elif self.path == "/api/control":
             self.with_client(
                 lambda client: client.set_control(
@@ -420,6 +502,9 @@ class Handler(BaseHTTPRequestHandler):
                     float(body["pid_p"]),
                     float(body["pid_i"]),
                     float(body["pid_d"]),
+                    str(body.get("cold_input") or "A"),
+                    str(body.get("sample_input") or "B"),
+                    str(body.get("control_input") or body.get("sample_input") or "B"),
                 )
             )
         elif self.path == "/api/step":

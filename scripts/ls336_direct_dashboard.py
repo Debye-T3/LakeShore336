@@ -26,6 +26,14 @@ APP_BG = "#f5f7fb"
 CARD_BG = "#ffffff"
 TEXT = "#1f2937"
 MUTED = "#4b5563"
+INPUT_CHANNELS = ("A", "B", "C", "D")
+
+
+def normalize_input(value: object, default: str = "A") -> str:
+    channel = str(value or default).strip().upper()
+    if channel not in INPUT_CHANNELS:
+        raise ValueError("Input must be A, B, C, or D")
+    return channel
 
 
 class LakeShoreSerialClient:
@@ -43,6 +51,9 @@ class LakeShoreSerialClient:
         self.timeout = timeout
         self._lock = threading.Lock()
         self._serial: serial.Serial | None = None
+        self.cold_input = "A"
+        self.sample_input = "B"
+        self.control_input = "B"
 
     def open(self) -> None:
         with self._lock:
@@ -84,10 +95,15 @@ class LakeShoreSerialClient:
     def read_all(self) -> dict[str, str]:
         ramp = self.query("RAMP? 1")
         ramp_enable, ramp_rate = self._split_ramp(ramp)
+        input_values = {channel: self.query(f"KRDG? {channel}") for channel in INPUT_CHANNELS}
         return {
             "idn": self.query("*IDN?"),
-            "cold_head": self.query("KRDG? A"),
-            "sample": self.query("KRDG? B"),
+            "cold_head": input_values[self.cold_input],
+            "sample": input_values[self.sample_input],
+            "input_a": input_values["A"],
+            "input_b": input_values["B"],
+            "input_c": input_values["C"],
+            "input_d": input_values["D"],
             "setpoint": self.query("SETP? 1"),
             "ramp_enable": ramp_enable,
             "ramp_rate": ramp_rate,
@@ -100,6 +116,12 @@ class LakeShoreSerialClient:
 
     def set_ramp(self, rate: float, enable: int = 1) -> None:
         self.write(f"RAMP 1,{enable},{rate:.3f}")
+
+    def configure_inputs(self, cold_input: str, sample_input: str, control_input: str) -> None:
+        self.cold_input = normalize_input(cold_input, "A")
+        self.sample_input = normalize_input(sample_input, "B")
+        self.control_input = normalize_input(control_input, self.sample_input)
+        self.write(f"CSET 1,{self.control_input},1,1")
 
     @staticmethod
     def _split_ramp(reply: str) -> tuple[str, str]:
@@ -133,6 +155,10 @@ class DirectDashboard(tk.Tk):
                 "idn",
                 "cold_head",
                 "sample",
+                "input_a",
+                "input_b",
+                "input_c",
+                "input_d",
                 "setpoint",
                 "ramp_enable",
                 "ramp_rate",
@@ -141,6 +167,9 @@ class DirectDashboard(tk.Tk):
             ]
         }
         self.status = tk.StringVar(value="Select a COM port and connect")
+        self.cold_input = tk.StringVar(value="A")
+        self.sample_input = tk.StringVar(value="B")
+        self.control_input = tk.StringVar(value="B")
         self.warmup_step = tk.DoubleVar(value=5.0)
         self.warmup_active = False
         self.refresh_after_id: str | None = None
@@ -207,19 +236,48 @@ class DirectDashboard(tk.Tk):
                 side="left", fill="x", expand=True, padx=4
             )
 
+        inputs = ttk.Frame(root)
+        inputs.pack(fill="x", pady=8)
+        for title, key in [
+            ("Input A", "input_a"),
+            ("Input B", "input_b"),
+            ("Input C", "input_c"),
+            ("Input D", "input_d"),
+        ]:
+            self._small_card(inputs, title, self.values[key]).pack(
+                side="left", fill="x", expand=True, padx=4
+            )
+
         controls = ttk.LabelFrame(root, text="Controls", padding=12)
         controls.pack(fill="x", pady=12)
 
+        input_row = ttk.Frame(controls)
+        input_row.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        for label, variable in [
+            ("Cold Input", self.cold_input),
+            ("Sample Input", self.sample_input),
+            ("Control Input", self.control_input),
+        ]:
+            ttk.Label(input_row, text=label).pack(side="left", padx=(0, 4))
+            ttk.Combobox(
+                input_row,
+                values=INPUT_CHANNELS,
+                textvariable=variable,
+                width=5,
+                state="readonly",
+            ).pack(side="left", padx=(0, 14))
+        ttk.Button(input_row, text="Apply Inputs", command=self.apply_inputs).pack(side="left")
+
         self.setpoint_entry = self._entry_row(
-            controls, 0, "Setpoint K", "300", self.apply_setpoint
+            controls, 1, "Setpoint K", "300", self.apply_setpoint
         )
-        self.ramp_entry = self._entry_row(controls, 1, "Ramp K/min", "1", self.apply_ramp)
+        self.ramp_entry = self._entry_row(controls, 2, "Ramp K/min", "1", self.apply_ramp)
         self.target_entry = self._entry_row(
-            controls, 2, "Warmup Target K", "300", self.apply_warmup_target
+            controls, 3, "Warmup Target K", "300", self.apply_warmup_target
         )
 
         step_row = ttk.Frame(controls)
-        step_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        step_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         ttk.Button(
             step_row,
             text="Use 5 K Step",
@@ -245,7 +303,7 @@ class DirectDashboard(tk.Tk):
         ttk.Button(step_row, text="Refresh", command=self.refresh_now).pack(side="right")
 
         rhythm_row = ttk.Frame(controls)
-        rhythm_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        rhythm_row.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         ttk.Label(rhythm_row, text="Rhythm interval min").pack(side="left")
         self.interval_entry = ttk.Entry(rhythm_row, width=8)
         self.interval_entry.insert(0, "5")
@@ -317,6 +375,9 @@ class DirectDashboard(tk.Tk):
             if ramp_rate is not None:
                 self._run_action("Setpoint", self._set_ramped_setpoint_worker, value, ramp_rate)
 
+    def apply_inputs(self) -> None:
+        self._run_action("Inputs", self._configure_inputs_worker)
+
     def apply_ramp(self) -> None:
         value = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
         if value is not None:
@@ -363,14 +424,29 @@ class DirectDashboard(tk.Tk):
 
     def _set_ramped_setpoint_worker(self, target: float, ramp_rate: float) -> dict[str, str]:
         client = self._require_client()
+        self._configure_inputs(client)
         if ramp_rate > 0:
             client.set_ramp(ramp_rate, 1)
         client.set_setpoint(target)
         time.sleep(0.2)
         return client.read_all()
 
+    def _configure_inputs_worker(self) -> dict[str, str]:
+        client = self._require_client()
+        self._configure_inputs(client)
+        time.sleep(0.2)
+        return client.read_all()
+
+    def _configure_inputs(self, client: LakeShoreSerialClient) -> None:
+        client.configure_inputs(
+            self.cold_input.get(),
+            self.sample_input.get(),
+            self.control_input.get(),
+        )
+
     def _advance_warmup_worker(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
         client = self._require_client()
+        self._configure_inputs(client)
         if ramp_rate > 0:
             client.set_ramp(ramp_rate, 1)
         current = float(client.query("SETP? 1"))

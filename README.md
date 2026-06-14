@@ -64,7 +64,7 @@ For a browser-based ARPES operator panel with demo mode, temperature trend plott
 python scripts\ls336_web_dashboard.py
 ```
 
-Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `RANGE`, `PID`, `RAMP`, and `SETP` commands in one controlled update.
+Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `CSET`, `RANGE`, `PID`, `RAMP`, and `SETP` commands in one controlled update. If the cold head and sample stage differ significantly, choose the sample sensor as `Control Input` first, then tune PID values for the thermal lag between the cold head and sample.
 
 ## Mac Browser Dashboard
 
