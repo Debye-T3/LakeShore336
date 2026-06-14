@@ -114,8 +114,8 @@ class LakeShoreSerialClient:
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
         if not 0 <= value <= 350:
             raise ValueError("Setpoint must be within 0..350 K")
-        if not 0 <= ramp_rate <= 5:
-            raise ValueError("Ramp rate must be within 0..5 K/min")
+        if not 0 <= ramp_rate <= 10:
+            raise ValueError("Ramp rate must be within 0..10 K/min")
 
         self.write(f"RANGE 1,{heater_range}")
         self.write(f"PID 1,{pid_p:.3f},{pid_i:.3f},{pid_d:.3f}")
@@ -377,7 +377,7 @@ function stableLongEnough(){return stableSince && (Date.now()-stableSince)/60000
 function startHold(){holdActive=true;holdComplete=false;setpoint();updateHold()}
 function stopHold(){holdActive=false;holdComplete=false;delete document.getElementById('hold_status').dataset.start;document.getElementById('hold_status').textContent=t('holdReady')}
 function updateHold(){const el=document.getElementById('hold_status');if(!holdActive)return;if(!stableLongEnough()){el.textContent=t('holdWaiting');return}if(!el.dataset.start)el.dataset.start=String(Date.now());const elapsed=(Date.now()-Number(el.dataset.start))/60000;const remain=number('hold_min')-elapsed;if(remain<=0){holdComplete=true;holdActive=false;delete el.dataset.start;el.textContent=t('holdDone')}else{el.textContent=t('holdRunning')+': '+remain.toFixed(1)+' min left'}}
-function warnings(){const out=[];const setp=Number(document.getElementById('target').value), ramp=number('ramp'), heater=Number(lastData.heater), sample=Number(lastData.sample);if(setp>350)out.push('Setpoint > 350 K');if(ramp>5)out.push('Ramp > 5 K/min');if(heater>85)out.push('Heater output high: '+heater.toFixed(1)+'%');if(sample>350)out.push('Sample > 350 K');return out}
+function warnings(){const out=[];const setp=Number(document.getElementById('target').value), ramp=number('ramp'), heater=Number(lastData.heater), sample=Number(lastData.sample);if(setp>350)out.push('Setpoint > 350 K');if(ramp>10)out.push('Ramp > 10 K/min');if(heater>85)out.push('Heater output high: '+heater.toFixed(1)+'%');if(sample>350)out.push('Sample > 350 K');return out}
 function updateWarnings(){const items=warnings();const panel=document.getElementById('warning_panel');document.getElementById('warnings').textContent=items.length?items.join('; '):t('noWarnings');panel.className=items.length?'panel warn':'panel good'}
 function startLog(){logEnabled=true;document.getElementById('log_status').textContent=t('logStarted')+', '+logRows.length+' rows'}
 function stopLog(){logEnabled=false;document.getElementById('log_status').textContent=t('logStopped')+', '+logRows.length+' rows'}

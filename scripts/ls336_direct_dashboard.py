@@ -313,12 +313,12 @@ class DirectDashboard(tk.Tk):
     def apply_setpoint(self) -> None:
         value = self._entry_number("Setpoint", self.setpoint_entry, 0, 350)
         if value is not None:
-            ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 5)
+            ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
             if ramp_rate is not None:
                 self._run_action("Setpoint", self._set_ramped_setpoint_worker, value, ramp_rate)
 
     def apply_ramp(self) -> None:
-        value = self._entry_number("Ramp rate", self.ramp_entry, 0, 5)
+        value = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
         if value is not None:
             self._run_action("Ramp", self._require_client().set_ramp, value, 1)
 
@@ -334,7 +334,7 @@ class DirectDashboard(tk.Tk):
         step = self._warmup_step_value()
         if step is None:
             return
-        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 5)
+        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
         if ramp_rate is None:
             return
         self._run_action("Advance warmup", self._advance_warmup_worker, target, step, ramp_rate)
@@ -346,7 +346,7 @@ class DirectDashboard(tk.Tk):
 
         target = self._entry_number("Warmup target", self.target_entry, 0, 350)
         step = self._warmup_step_value()
-        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 5)
+        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
         interval = self._entry_number("Rhythm interval", self.interval_entry, 0.1, 240)
         if target is None or step is None or ramp_rate is None or interval is None:
             return
