@@ -292,7 +292,6 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
         "RANGE? 1",
         "RANGE 1,",
         "PID? 1",
-        "PID 1,",
         "KRDG? {channel}",
         "CSET 1,",
         "/api/control",
@@ -308,6 +307,14 @@ def test_windows_direct_dashboard_uses_serial_without_epics():
         "threading.RLock",
     ]:
         assert snippet in web_dashboard
+
+    for snippet in [
+        "PID 1,",
+        'float(body["pid_p"])',
+        'float(body["pid_i"])',
+        'float(body["pid_d"])',
+    ]:
+        assert snippet not in web_dashboard
 
 
 def test_public_demo_site_documents_safe_sharing_workflow():
@@ -329,12 +336,33 @@ def test_public_demo_site_documents_safe_sharing_workflow():
         "Medium",
         "High",
         "PID",
+        "pid_p_rb",
+        "pid_i_rb",
+        "pid_d_rb",
         "START RHYTHM",
+        "warning_panel",
+        "warning_header",
+        "warning_list",
+        "wSensorZero",
+        "wControlZero",
+        "wSetpointFar",
+        "wDanger",
+        "noWarnings",
         "中文",
         "/api/control",
         "ls336_arpes_log.csv",
     ]:
         assert snippet in demo
+
+    assert 'id="pid_p" type="number" value="40"' not in demo
+    assert 'id="pid_i" type="number" value="80"' not in demo
+    assert 'id="pid_d" type="number" value="2"' not in demo
+    assert 'id="pid_p"' not in demo
+    assert 'id="pid_i"' not in demo
+    assert 'id="pid_d"' not in demo
+    assert "pid_status" not in demo
+    assert "pidSynced" not in demo
+    assert "pidUnsaved" not in demo
 
     assert '"/web/index.html"' in vercel
 

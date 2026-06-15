@@ -58,13 +58,13 @@ Command-line example:
 python scripts\ls336_direct_dashboard.py --port COM3
 ```
 
-For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID settings, rhythm warmup, CSV logging, safety warnings, and English/Chinese labels, run:
+For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID readback, rhythm warmup, CSV logging, safety warnings, and English/Chinese labels, run:
 
 ```powershell
 python scripts\ls336_web_dashboard.py
 ```
 
-Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `CSET`, `RANGE`, `PID`, `RAMP`, and `SETP` commands in one controlled update. If the cold head and sample stage differ significantly, choose the sample sensor as `Control Input` first, then tune PID values for the thermal lag between the cold head and sample.
+Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID readback values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `CSET`, `RANGE`, `RAMP`, and `SETP` commands in one controlled update; it does not write PID values. Adjust PID on the instrument itself when commissioning or tuning, then use the dashboard to read back the active PID values.
 
 ## Mac Browser Dashboard
 
@@ -96,7 +96,7 @@ There are two supported sharing modes:
 
 ### Public Demo Website
 
-The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID values, rhythm warmup, safety warnings, and CSV logging.
+The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID readback values, rhythm warmup, safety warnings, and CSV logging.
 
 Vercel workflow:
 

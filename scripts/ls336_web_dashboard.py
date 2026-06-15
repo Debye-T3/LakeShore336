@@ -117,7 +117,7 @@ class LakeShoreSerialClient:
         if ramp_rate > 0:
             self.write(f"RAMP 1,1,{ramp_rate:.3f}")
         self.write(f"SETP 1,{value:.3f}")
-        time.sleep(0.2)
+        time.sleep(0.5)
         return self.read_all()
 
     def set_inputs(self, cold_input: str, sample_input: str, control_input: str) -> dict[str, str]:
@@ -131,9 +131,6 @@ class LakeShoreSerialClient:
         value: float,
         ramp_rate: float,
         heater_range: int,
-        pid_p: float,
-        pid_i: float,
-        pid_d: float,
         cold_input: str | None = None,
         sample_input: str | None = None,
         control_input: str | None = None,
@@ -154,10 +151,9 @@ class LakeShoreSerialClient:
 
         self.write(f"CSET 1,{self.control_input},1,1")
         self.write(f"RANGE 1,{heater_range}")
-        self.write(f"PID 1,{pid_p:.3f},{pid_i:.3f},{pid_d:.3f}")
         self.write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
         self.write(f"SETP 1,{value:.3f}")
-        time.sleep(0.2)
+        time.sleep(0.5)
         return self.read_all()
 
     def step_warmup(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
@@ -166,7 +162,7 @@ class LakeShoreSerialClient:
         current = float(self.query("SETP? 1"))
         next_setpoint = min(current + step, target) if target > current else current
         self.write(f"SETP 1,{next_setpoint:.3f}")
-        time.sleep(0.2)
+        time.sleep(0.5)
         values = self.read_all()
         values["warmup_done"] = str(next_setpoint >= target).lower()
         values["warmup_next"] = f"{next_setpoint:.3f}"
@@ -240,9 +236,6 @@ class DemoLakeShoreClient:
         value: float,
         ramp_rate: float,
         heater_range: int,
-        pid_p: float,
-        pid_i: float,
-        pid_d: float,
         cold_input: str | None = None,
         sample_input: str | None = None,
         control_input: str | None = None,
@@ -263,7 +256,6 @@ class DemoLakeShoreClient:
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
         self.heater_range = heater_range
-        self.pid = [pid_p, pid_i, pid_d]
         return self.read_all()
 
     def step_warmup(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
@@ -499,9 +491,6 @@ class Handler(BaseHTTPRequestHandler):
                     float(body["target"]),
                     float(body["ramp"]),
                     int(body["range"]),
-                    float(body["pid_p"]),
-                    float(body["pid_i"]),
-                    float(body["pid_d"]),
                     str(body.get("cold_input") or "A"),
                     str(body.get("sample_input") or "B"),
                     str(body.get("control_input") or body.get("sample_input") or "B"),
