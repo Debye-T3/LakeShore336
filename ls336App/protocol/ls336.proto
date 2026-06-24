@@ -41,7 +41,7 @@ getRampRate {
 setRamp {
     # Command shape: out "RAMP 1,%d,%f";
     out "RAMP 1,%(\$1Loop1:RAMP:ENABLE.VAL)d,%f";
-    @init { getRampRate; }
+    @init { getRampRate; getRampEnable; }
 }
 
 getHeater {

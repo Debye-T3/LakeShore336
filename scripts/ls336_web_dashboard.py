@@ -4,14 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import glob
 import json
+import os
+import secrets
 import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
+from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 try:
     import serial
@@ -23,14 +30,36 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_BAUD = 57600
 DEFAULT_TIMEOUT = 2.0
-ROOT = Path(__file__).resolve().parents[1]
-RANGE_LABELS = {
-    "0": "Off",
-    "1": "Low",
-    "2": "Medium",
-    "3": "High",
-}
+DEFAULT_MAINT_PASSWORD = "ls336-maint"
+if getattr(sys, "frozen", False):
+    ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    LOG_DIR = Path(sys.executable).parent / "logs"
+else:
+    ROOT = Path(__file__).resolve().parents[1]
+    LOG_DIR = ROOT / "logs"
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 INPUT_CHANNELS = ("A", "B", "C", "D")
+RANGE_LABELS = {"0": "Off", "1": "Low", "2": "Medium", "3": "High"}
+CSV_FIELDS = [
+    "timestamp_iso",
+    "timestamp_local",
+    "cold_head_K",
+    "sample_K",
+    "input_a_K",
+    "input_b_K",
+    "input_c_K",
+    "input_d_K",
+    "setpoint_K",
+    "ramp_enable",
+    "ramp_rate_K_per_min",
+    "heater_range",
+    "heater_percent",
+    "pid_p",
+    "pid_i",
+    "pid_d",
+    "comm",
+    "stable_state",
+]
 
 
 def normalize_input(value: object, default: str = "A") -> str:
@@ -38,6 +67,45 @@ def normalize_input(value: object, default: str = "A") -> str:
     if channel not in INPUT_CHANNELS:
         raise ValueError("Input must be A, B, C, or D")
     return channel
+
+
+def split_ramp(reply: str) -> tuple[str, str]:
+    pieces = [piece.strip() for piece in reply.split(",", 1)]
+    if len(pieces) != 2:
+        return reply, "--"
+    return ("On" if pieces[0] == "1" else "Off", pieces[1])
+
+
+def split_pid(reply: str) -> tuple[str, str, str]:
+    pieces = [piece.strip() for piece in reply.split(",")]
+    if len(pieces) != 3:
+        return ("--", "--", "--")
+    return (pieces[0], pieces[1], pieces[2])
+
+
+def normalize_range(reply: str) -> str:
+    return reply.strip().split(",", 1)[0]
+
+
+def stable_state(values: dict[str, str], tolerance: float = 0.2) -> str:
+    try:
+        sample = float(values["sample"])
+        setpoint = float(values["setpoint"])
+    except (KeyError, TypeError, ValueError):
+        return "--"
+    return "Stable" if abs(sample - setpoint) <= tolerance else "Not stable"
+
+
+def today_key() -> str:
+    return datetime.now(BEIJING_TZ).strftime("%Y%m%d")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def beijing_now() -> datetime:
+    return datetime.now(BEIJING_TZ)
 
 
 class LakeShoreSerialClient:
@@ -80,14 +148,28 @@ class LakeShoreSerialClient:
 
     def write(self, command: str) -> None:
         with self._lock:
-            self.open()
-            assert self._serial is not None
-            self._serial.write(f"{command}\r\n".encode("ascii"))
+            self._raw_write(command)
+
+    def _raw_write(self, command: str) -> None:
+        self.open()
+        assert self._serial is not None
+        self._serial.write(f"{command}\r\n".encode("ascii"))
+
+    def read_pid(self) -> tuple[str, str, str]:
+        return split_pid(self.query("PID? 1"))
+
+    def set_pid(self, p: float, i: float, d: float) -> dict[str, str]:
+        with self._lock:
+            old = self.read_pid()
+            self._raw_write(f"PID 1,{p:.3f},{i:.3f},{d:.3f}")
+            time.sleep(0.2)
+            new = self.read_pid()
+            return {"old": ",".join(old), "new": ",".join(new)}
 
     def read_all(self) -> dict[str, str]:
         ramp_enable, ramp_rate = split_ramp(self.query("RAMP? 1"))
         heater_range_raw = normalize_range(self.query("RANGE? 1"))
-        pid_p, pid_i, pid_d = split_pid(self.query("PID? 1"))
+        pid_p, pid_i, pid_d = self.read_pid()
         input_values = {channel: self.query(f"KRDG? {channel}") for channel in INPUT_CHANNELS}
         return {
             "idn": self.query("*IDN?"),
@@ -114,16 +196,21 @@ class LakeShoreSerialClient:
         }
 
     def set_setpoint(self, value: float, ramp_rate: float) -> dict[str, str]:
-        if ramp_rate > 0:
-            self.write(f"RAMP 1,1,{ramp_rate:.3f}")
-        self.write(f"SETP 1,{value:.3f}")
-        time.sleep(0.5)
-        return self.read_all()
+        if not 0 <= value <= 350:
+            raise ValueError("Setpoint must be within 0..350 K")
+        if not 0 <= ramp_rate <= 10:
+            raise ValueError("Ramp rate must be within 0..10 K/min")
+        with self._lock:
+            self._raw_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
+            self._raw_write(f"SETP 1,{value:.3f}")
+            time.sleep(0.5)
+            return self.read_all()
 
     def set_inputs(self, cold_input: str, sample_input: str, control_input: str) -> dict[str, str]:
         self.cold_input = normalize_input(cold_input, "A")
         self.sample_input = normalize_input(sample_input, "B")
         self.control_input = normalize_input(control_input, self.sample_input)
+        self.write(f"CSET 1,{self.control_input},1,1")
         return self.read_all()
 
     def set_control(
@@ -131,9 +218,9 @@ class LakeShoreSerialClient:
         value: float,
         ramp_rate: float,
         heater_range: int,
-        cold_input: str | None = None,
-        sample_input: str | None = None,
-        control_input: str | None = None,
+        cold_input: str,
+        sample_input: str,
+        control_input: str,
     ) -> dict[str, str]:
         if heater_range not in (0, 1, 2, 3):
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
@@ -141,39 +228,21 @@ class LakeShoreSerialClient:
             raise ValueError("Setpoint must be within 0..350 K")
         if not 0 <= ramp_rate <= 10:
             raise ValueError("Ramp rate must be within 0..10 K/min")
-
-        if cold_input is not None:
-            self.cold_input = normalize_input(cold_input, self.cold_input)
-        if sample_input is not None:
-            self.sample_input = normalize_input(sample_input, self.sample_input)
-        if control_input is not None:
-            self.control_input = normalize_input(control_input, self.sample_input)
-
-        self.write(f"CSET 1,{self.control_input},1,1")
-        self.write(f"RANGE 1,{heater_range}")
-        self.write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
-        self.write(f"SETP 1,{value:.3f}")
-        time.sleep(0.5)
-        return self.read_all()
-
-    def step_warmup(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
-        if ramp_rate > 0:
-            self.write(f"RAMP 1,1,{ramp_rate:.3f}")
-        current = float(self.query("SETP? 1"))
-        next_setpoint = min(current + step, target) if target > current else current
-        self.write(f"SETP 1,{next_setpoint:.3f}")
-        time.sleep(0.5)
-        values = self.read_all()
-        values["warmup_done"] = str(next_setpoint >= target).lower()
-        values["warmup_next"] = f"{next_setpoint:.3f}"
-        return values
+        self.cold_input = normalize_input(cold_input, self.cold_input)
+        self.sample_input = normalize_input(sample_input, self.sample_input)
+        self.control_input = normalize_input(control_input, self.sample_input)
+        with self._lock:
+            self._raw_write(f"CSET 1,{self.control_input},1,1")
+            self._raw_write(f"RANGE 1,{heater_range}")
+            self._raw_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
+            self._raw_write(f"SETP 1,{value:.3f}")
+            time.sleep(0.5)
+            return self.read_all()
 
 
 class DemoLakeShoreClient:
     def __init__(self) -> None:
         self.idn = "DEMO,Lake Shore 336,LSA336-DEMO,1.0"
-        self.cold_head = 82.4
-        self.sample = 84.1
         self.setpoint_value = 90.0
         self.ramp_rate = 0.5
         self.ramp_enabled = True
@@ -182,19 +251,24 @@ class DemoLakeShoreClient:
         self.cold_input = "A"
         self.sample_input = "B"
         self.control_input = "B"
-        self.inputs = {
-            "A": 82.4,
-            "B": 84.1,
-            "C": 296.0,
-            "D": 296.0,
-        }
+        self.inputs = {"A": 82.4, "B": 84.1, "C": 296.0, "D": 296.0}
         self.last_update = time.monotonic()
 
     def open(self) -> None:
         self.last_update = time.monotonic()
 
+    def read_pid(self) -> tuple[str, str, str]:
+        return (f"{self.pid[0]:.3f}", f"{self.pid[1]:.3f}", f"{self.pid[2]:.3f}")
+
+    def set_pid(self, p: float, i: float, d: float) -> dict[str, str]:
+        old = self.read_pid()
+        self.pid = [p, i, d]
+        new = self.read_pid()
+        return {"old": ",".join(old), "new": ",".join(new)}
+
     def read_all(self) -> dict[str, str]:
         self._simulate_temperature()
+        pid_p, pid_i, pid_d = self.read_pid()
         return {
             "idn": self.idn,
             "cold_head": f"{self.inputs[self.cold_input]:.3f}",
@@ -211,15 +285,19 @@ class DemoLakeShoreClient:
             "ramp_rate": f"{self.ramp_rate:.3f}",
             "heater_range_raw": str(self.heater_range),
             "heater_range": RANGE_LABELS[str(self.heater_range)],
-            "pid_p": f"{self.pid[0]:.3f}",
-            "pid_i": f"{self.pid[1]:.3f}",
-            "pid_d": f"{self.pid[2]:.3f}",
+            "pid_p": pid_p,
+            "pid_i": pid_i,
+            "pid_d": pid_d,
             "heater": f"{self._heater_output():.1f}",
             "comm": "Demo",
             "updated": time.strftime("%H:%M:%S"),
         }
 
     def set_setpoint(self, value: float, ramp_rate: float) -> dict[str, str]:
+        if not 0 <= value <= 350:
+            raise ValueError("Setpoint must be within 0..350 K")
+        if not 0 <= ramp_rate <= 10:
+            raise ValueError("Ramp rate must be within 0..10 K/min")
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
         self.setpoint_value = value
@@ -236,9 +314,9 @@ class DemoLakeShoreClient:
         value: float,
         ramp_rate: float,
         heater_range: int,
-        cold_input: str | None = None,
-        sample_input: str | None = None,
-        control_input: str | None = None,
+        cold_input: str,
+        sample_input: str,
+        control_input: str,
     ) -> dict[str, str]:
         if heater_range not in (0, 1, 2, 3):
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
@@ -246,41 +324,24 @@ class DemoLakeShoreClient:
             raise ValueError("Setpoint must be within 0..350 K")
         if not 0 <= ramp_rate <= 10:
             raise ValueError("Ramp rate must be within 0..10 K/min")
-        if cold_input is not None:
-            self.cold_input = normalize_input(cold_input, self.cold_input)
-        if sample_input is not None:
-            self.sample_input = normalize_input(sample_input, self.sample_input)
-        if control_input is not None:
-            self.control_input = normalize_input(control_input, self.sample_input)
+        self.set_inputs(cold_input, sample_input, control_input)
         self.setpoint_value = value
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
         self.heater_range = heater_range
         return self.read_all()
 
-    def step_warmup(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
-        self.ramp_rate = ramp_rate
-        self.ramp_enabled = ramp_rate > 0
-        self.setpoint_value = min(self.setpoint_value + step, target)
-        values = self.read_all()
-        values["warmup_done"] = str(self.setpoint_value >= target).lower()
-        values["warmup_next"] = f"{self.setpoint_value:.3f}"
-        return values
-
     def _simulate_temperature(self) -> None:
         now = time.monotonic()
         dt = min(10.0, max(0.0, now - self.last_update))
         self.last_update = now
         rate_per_second = max(self.ramp_rate, 0.1) / 60.0
-        for channel in INPUT_CHANNELS:
-            if channel in ("C", "D"):
-                continue
+        for channel in ("A", "B"):
             lag = 1.0 if channel == self.control_input else 0.65
             value = self.inputs[channel]
             delta = self.setpoint_value - value
             max_move = rate_per_second * dt * lag
-            move = max(-max_move, min(max_move, delta))
-            self.inputs[channel] = value + move
+            self.inputs[channel] = value + max(-max_move, min(max_move, delta))
 
     def _heater_output(self) -> float:
         error = max(0.0, self.setpoint_value - self.inputs[self.control_input])
@@ -289,26 +350,191 @@ class DemoLakeShoreClient:
         return min(100.0, error * 8.0 + self.heater_range * 8.0)
 
 
-def split_ramp(reply: str) -> tuple[str, str]:
-    pieces = [piece.strip() for piece in reply.split(",", 1)]
-    if len(pieces) != 2:
-        return reply, "--"
-    return ("On" if pieces[0] == "1" else "Off", pieces[1])
+class LogArchive:
+    def __init__(self, log_dir: Path) -> None:
+        self.log_dir = log_dir
+        self._lock = threading.RLock()
+        self.active = True
+        self.rows = 0
+        self.csv_path: Path | None = None
+        self.meta_path: Path | None = None
+        self.current_key = ""
+        self.current_port = ""
+        self.current_mode = ""
+        self.last_write_iso = ""
+        self.error = ""
+
+    def start_session(self, selected_port: str, mode: str) -> dict[str, object]:
+        with self._lock:
+            self.active = True
+            self.current_port = selected_port
+            self.current_mode = mode
+            try:
+                self._ensure_file(force=False)
+            except OSError as exc:
+                self.error = str(exc)
+                return self.status()
+            payload = self._metadata()
+            payload.setdefault("sessions", []).append(
+                {
+                    "started_iso": utc_now(),
+                    "started_local": beijing_now().isoformat(timespec="seconds"),
+                    "selected_port": selected_port,
+                    "mode": mode,
+                }
+            )
+            self._save_metadata(payload)
+            return self.status()
+
+    def pause(self, operator: str) -> dict[str, object]:
+        with self._lock:
+            self.active = False
+            self._record_operation("pause_logging", operator)
+            return self.status()
+
+    def resume(self, operator: str) -> dict[str, object]:
+        with self._lock:
+            self.active = True
+            self._ensure_file(force=False)
+            self._record_operation("resume_logging", operator)
+            return self.status()
+
+    def new_file(self, operator: str) -> dict[str, object]:
+        with self._lock:
+            self.active = True
+            self._ensure_file(force=True)
+            self._record_operation("new_log_file", operator)
+            return self.status()
+
+    def append(self, values: dict[str, str]) -> None:
+        with self._lock:
+            if not self.active:
+                return
+            try:
+                self._ensure_file(force=False)
+                assert self.csv_path is not None
+                now = beijing_now()
+                row = {
+                    "timestamp_iso": utc_now(),
+                    "timestamp_local": now.isoformat(timespec="seconds"),
+                    "cold_head_K": values.get("cold_head", ""),
+                    "sample_K": values.get("sample", ""),
+                    "input_a_K": values.get("input_a", ""),
+                    "input_b_K": values.get("input_b", ""),
+                    "input_c_K": values.get("input_c", ""),
+                    "input_d_K": values.get("input_d", ""),
+                    "setpoint_K": values.get("setpoint", ""),
+                    "ramp_enable": values.get("ramp_enable", ""),
+                    "ramp_rate_K_per_min": values.get("ramp_rate", ""),
+                    "heater_range": values.get("heater_range", ""),
+                    "heater_percent": values.get("heater", ""),
+                    "pid_p": values.get("pid_p", ""),
+                    "pid_i": values.get("pid_i", ""),
+                    "pid_d": values.get("pid_d", ""),
+                    "comm": values.get("comm", ""),
+                    "stable_state": stable_state(values),
+                }
+                with self.csv_path.open("a", newline="", encoding="utf-8") as handle:
+                    csv.DictWriter(handle, fieldnames=CSV_FIELDS).writerow(row)
+                self.rows += 1
+                self.last_write_iso = row["timestamp_iso"]
+                self.error = ""
+            except OSError as exc:
+                self.error = str(exc)
+
+    def audit_pid(self, operator: str, old: str, new: str) -> None:
+        with self._lock:
+            self._record_operation("pid_write", operator, {"old": old, "new": new})
+
+    def status(self) -> dict[str, object]:
+        return {
+            "active": self.active,
+            "rows": self.rows,
+            "csv": str(self.csv_path) if self.csv_path else "",
+            "metadata": str(self.meta_path) if self.meta_path else "",
+            "log_dir": str(self.log_dir),
+            "filename": self.csv_path.name if self.csv_path else "",
+            "last_write_iso": self.last_write_iso,
+            "error": self.error,
+        }
+
+    def _ensure_file(self, force: bool) -> None:
+        key = today_key()
+        if not force and self.csv_path is not None and self.current_key == key and self.csv_path.exists():
+            return
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        suffix = "" if not force else f"_manual_{beijing_now().strftime('%H%M%S')}"
+        self.current_key = key
+        self.csv_path = self.log_dir / f"ls336_temperature_{key}{suffix}.csv"
+        self.meta_path = self.log_dir / f"ls336_temperature_{key}{suffix}.meta.json"
+        if not self.csv_path.exists():
+            with self.csv_path.open("w", newline="", encoding="utf-8") as handle:
+                csv.DictWriter(handle, fieldnames=CSV_FIELDS).writeheader()
+        self.rows = max(0, sum(1 for _ in self.csv_path.open(encoding="utf-8")) - 1)
+        if not self.meta_path.exists():
+            self._save_metadata({"sessions": [], "operations": []})
+
+    def _metadata(self) -> dict[str, object]:
+        if self.meta_path is None or not self.meta_path.exists():
+            return {"sessions": [], "operations": []}
+        try:
+            return json.loads(self.meta_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"sessions": [], "operations": []}
+
+    def _save_metadata(self, metadata: dict[str, object] | None = None) -> None:
+        if self.meta_path is None:
+            return
+        payload = metadata or self._metadata()
+        payload.setdefault("sessions", [])
+        payload.setdefault("operations", [])
+        payload.update(
+            {
+                "instrument": "Lake Shore 336",
+                "date": self.current_key,
+                "timezone": "Asia/Shanghai",
+                "selected_port": self.current_port,
+                "mode": self.current_mode,
+                "csv_file": self.csv_path.name if self.csv_path else "",
+                "csv_fields": CSV_FIELDS,
+                "project_root": str(ROOT),
+                "software": "LakeShore336 local dashboard",
+            }
+        )
+        self.meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _record_operation(self, action: str, operator: str, details: dict[str, str] | None = None) -> None:
+        self._ensure_file(force=False)
+        payload = self._metadata()
+        payload.setdefault("operations", []).append(
+            {
+                "timestamp_iso": utc_now(),
+                "timestamp_local": beijing_now().isoformat(timespec="seconds"),
+                "operator": operator,
+                "action": action,
+                "details": details or {},
+            }
+        )
+        self._save_metadata(payload)
 
 
-def normalize_range(reply: str) -> str:
-    return reply.strip().split(",", 1)[0]
+class MaintenanceAuth:
+    def __init__(self, password: str) -> None:
+        self.password = password
+        self._tokens: set[str] = set()
+        self._lock = threading.RLock()
 
+    def login(self, password: str) -> str:
+        if not secrets.compare_digest(password, self.password):
+            raise PermissionError("Invalid maintenance password")
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            self._tokens.add(token)
+        return token
 
-def split_pid(reply: str) -> tuple[str, str, str]:
-    pieces = [piece.strip() for piece in reply.split(",")]
-    if len(pieces) != 3:
-        return ("--", "--", "--")
-    return (pieces[0], pieces[1], pieces[2])
-
-
-def dashboard_html() -> str:
-    return (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    def is_valid(self, token: str) -> bool:
+        with self._lock:
+            return token in self._tokens
 
 
 def available_ports() -> list[str]:
@@ -323,169 +549,96 @@ def available_ports() -> list[str]:
     return ports
 
 
-STATE: dict[str, object | None] = {"client": None}
+STATE: dict[str, object | None] = {"client": None, "selected_port": None, "mode": None}
+LOGGER = LogArchive(LOG_DIR)
+AUTH = MaintenanceAuth(os.environ.get("LS336_MAINT_PASSWORD", DEFAULT_MAINT_PASSWORD))
 
 
-HTML = r"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lake Shore 336 Dashboard</title>
-<style>
-body{margin:0;background:#f4f6fb;color:#172033;font-family:Arial,Helvetica,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:24px}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
-h1{font-size:28px;margin:0}.bar{display:flex;gap:8px;align-items:center}
-select,input,button{font:inherit;border:1px solid #cbd5e1;border-radius:6px;padding:8px 10px;background:white;color:#172033}
-button{cursor:pointer;background:#2563eb;color:white;border-color:#2563eb;font-weight:700}
-button.secondary{background:#e2e8f0;color:#172033;border-color:#cbd5e1}
-.grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
-.cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:16px 0}
-.card{background:white;border:1px solid #dbe3ef;border-radius:8px;padding:16px}
-.label{color:#64748b;font-size:13px}.temp{font-size:46px;font-weight:800;margin-top:6px}.value{font-size:20px;font-weight:800;margin-top:6px}
-.panel{background:white;border:1px solid #dbe3ef;border-radius:8px;padding:16px;margin-top:16px}
-.controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}.controls.three{grid-template-columns:repeat(3,minmax(0,1fr))}
-.status{margin-top:14px;color:#475569}.ok{color:#15803d}.bad{color:#b91c1c}
-.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}.good{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
-.muted{color:#64748b;font-size:13px}.pill{display:inline-block;border-radius:999px;padding:4px 10px;font-weight:700;background:#e2e8f0}.pill.good{background:#dcfce7;color:#166534}.pill.warn{background:#ffedd5;color:#9a3412}
-@media(max-width:900px){.grid,.cards,.controls,.controls.three{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
-</style>
-</head>
-<body>
-<main>
-<header>
-  <h1 data-i18n="title">Lake Shore 336 Direct Dashboard</h1>
-  <div class="bar">
-    <select id="language" onchange="setLanguage(this.value)"><option value="en">English</option><option value="zh">中文</option></select>
-    <select id="port"></select>
-    <button onclick="connect()" data-i18n="connect">Connect</button>
-    <button class="secondary" onclick="refresh()" data-i18n="refresh">Refresh</button>
-  </div>
-</header>
-<section class="grid">
-  <div class="card"><div class="label" data-i18n="sample">Sample</div><div class="temp"><span id="sample">--</span> K</div></div>
-  <div class="card"><div class="label" data-i18n="coldHead">Cold Head</div><div class="temp"><span id="cold_head">--</span> K</div></div>
-</section>
-<section class="cards">
-  <div class="card"><div class="label" data-i18n="setpoint">Setpoint</div><div class="value"><span id="setpoint">--</span> K</div></div>
-  <div class="card"><div class="label" data-i18n="ramp">Ramp</div><div class="value" id="ramp_enable">--</div></div>
-  <div class="card"><div class="label" data-i18n="rampRate">Ramp Rate</div><div class="value"><span id="ramp_rate">--</span> K/min</div></div>
-  <div class="card"><div class="label" data-i18n="heater">Heater</div><div class="value"><span id="heater">--</span> %</div></div>
-  <div class="card"><div class="label" data-i18n="comm">Comm</div><div class="value" id="comm">--</div></div>
-  <div class="card"><div class="label" data-i18n="stable">Stable</div><div class="value" id="stable_state">--</div></div>
-</section>
-<section class="panel">
-  <h2 data-i18n="control">Temperature Control</h2>
-  <div class="controls">
-    <label><span data-i18n="setpointK">Setpoint K</span><br><input id="target" value="90" type="number" step="0.1"></label>
-    <label><span data-i18n="rampKmin">Ramp K/min</span><br><input id="ramp" value="0.5" type="number" step="0.1"></label>
-    <button onclick="setpoint()" data-i18n="applySetpoint">Apply Setpoint</button>
-    <button class="secondary" onclick="refresh()" data-i18n="readBack">Read Back</button>
-  </div>
-</section>
-<section class="panel">
-  <h2 data-i18n="rhythm">Rhythm Warmup</h2>
-  <div class="controls">
-    <label><span data-i18n="warmTarget">Warmup Target K</span><br><input id="warm_target" value="100" type="number" step="0.1"></label>
-    <label><span data-i18n="stepK">Step K</span><br><input id="step" value="5" type="number" step="0.1"></label>
-    <label><span data-i18n="rhythmInterval">Rhythm Interval min</span><br><input id="interval" value="5" type="number" step="0.1"></label>
-    <div><button onclick="oneStep()" data-i18n="advance">Advance One Step</button> <button class="secondary" onclick="toggleRhythm()" id="rhythm_button" data-i18n="startRhythm">Start Rhythm</button></div>
-  </div>
-</section>
-<section class="panel">
-  <h2 data-i18n="stability">Stability / Hold</h2>
-  <div class="controls">
-    <label><span data-i18n="stableTol">Stable tolerance K</span><br><input id="stable_tol" value="0.2" type="number" step="0.05"></label>
-    <label><span data-i18n="stableMin">Stable duration min</span><br><input id="stable_min" value="2" type="number" step="0.5"></label>
-    <label><span data-i18n="holdMin">Hold / soak min</span><br><input id="hold_min" value="10" type="number" step="1"></label>
-    <div><button onclick="startHold()" data-i18n="startHold">Start Hold</button> <button class="secondary" onclick="stopHold()" data-i18n="stopHold">Stop Hold</button></div>
-  </div>
-  <div class="status" id="hold_status" data-i18n="holdReady">Hold is idle.</div>
-</section>
-<section class="panel">
-  <h2 data-i18n="logging">CSV Logging</h2>
-  <div class="controls three">
-    <button onclick="startLog()" data-i18n="startLog">Start Log</button>
-    <button class="secondary" onclick="stopLog()" data-i18n="stopLog">Stop Log</button>
-    <button class="secondary" onclick="downloadCsv()" data-i18n="downloadCsv">Download CSV</button>
-  </div>
-  <div class="status" id="log_status">0 rows</div>
-</section>
-<section class="panel warn" id="warning_panel"><strong data-i18n="warnings">Safety warnings</strong><div id="warnings">--</div></section>
-<section class="panel"><div class="label" data-i18n="instrumentId">Instrument ID</div><div id="idn">--</div><div class="status" id="status" data-i18n="ready">Ready. Select a port and connect.</div></section>
-</main>
-<script>
-let timer=null, autoTimer=null, logEnabled=false, logRows=[];
-let lastData={}, stableSince=null, holdActive=false, holdComplete=false, language='en';
-const tr={
-en:{title:'Lake Shore 336 Direct Dashboard',connect:'Connect',refresh:'Refresh',sample:'Sample',coldHead:'Cold Head',setpoint:'Setpoint',ramp:'Ramp',rampRate:'Ramp Rate',heater:'Heater',comm:'Comm',stable:'Stable',control:'Temperature Control',setpointK:'Setpoint K',rampKmin:'Ramp K/min',applySetpoint:'Apply Setpoint',readBack:'Read Back',rhythm:'Rhythm Warmup',warmTarget:'Warmup Target K',stepK:'Step K',rhythmInterval:'Rhythm Interval min',advance:'Advance One Step',startRhythm:'Start Rhythm',stopRhythm:'Stop Rhythm',stability:'Stability / Hold',stableTol:'Stable tolerance K',stableMin:'Stable duration min',holdMin:'Hold / soak min',startHold:'Start Hold',stopHold:'Stop Hold',holdReady:'Hold is idle.',logging:'CSV Logging',startLog:'Start Log',stopLog:'Stop Log',downloadCsv:'Download CSV',warnings:'Safety warnings',instrumentId:'Instrument ID',ready:'Ready. Select a port and connect.',updated:'Updated',notConnected:'Not connected',stableNow:'Stable',notStable:'Not stable',logStarted:'Log running',logStopped:'Log stopped',holdWaiting:'Hold waiting for stable temperature',holdRunning:'Hold running',holdDone:'Hold complete',noWarnings:'No warnings',demoHint:'Demo mode connected'},
-zh:{title:'Lake Shore 336 直连面板',connect:'连接',refresh:'刷新',sample:'样品温度',coldHead:'冷头温度',setpoint:'设定温度',ramp:'升温开关',rampRate:'升温速率',heater:'加热输出',comm:'通信',stable:'稳定',control:'温度控制',setpointK:'设定温度 K',rampKmin:'升温速率 K/min',applySetpoint:'应用设定',readBack:'读回',rhythm:'节奏升温',warmTarget:'升温目标 K',stepK:'每步 K',rhythmInterval:'节奏间隔 min',advance:'前进一步',startRhythm:'开始节奏',stopRhythm:'停止节奏',stability:'稳定判据 / 保温',stableTol:'稳定容差 K',stableMin:'稳定持续 min',holdMin:'保温 min',startHold:'开始保温',stopHold:'停止保温',holdReady:'保温未启动。',logging:'CSV 日志',startLog:'开始记录',stopLog:'停止记录',downloadCsv:'下载 CSV',warnings:'安全提醒',instrumentId:'仪器 ID',ready:'准备好。选择端口并连接。',updated:'已更新',notConnected:'未连接',stableNow:'已稳定',notStable:'未稳定',logStarted:'正在记录',logStopped:'记录已停止',holdWaiting:'等待温度稳定后开始保温',holdRunning:'正在保温',holdDone:'保温完成',noWarnings:'没有提醒',demoHint:'Demo 模式已连接'}
-};
-function number(id){return Number(document.getElementById(id).value)}
-async function api(path, body){const res=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await res.json();if(!res.ok)throw new Error(data.error||res.statusText);return data}
-function showStatus(msg,bad=false){const el=document.getElementById('status');el.textContent=msg;el.className=bad?'status bad':'status ok'}
-function t(k){return tr[language][k]||tr.en[k]||k}
-function setLanguage(lang){language=lang;document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.dataset.i18n)});document.getElementById('rhythm_button').textContent=timer?t('stopRhythm'):t('startRhythm');updateStable();updateWarnings();updateHold()}
-function update(data){lastData={...lastData,...data};for(const [k,v] of Object.entries(data)){const el=document.getElementById(k);if(el)el.textContent=v||'--'} updateStable();updateWarnings();updateHold();if(logEnabled)appendLog();if(data.updated)showStatus(t('updated')+' '+data.updated)}
-async function loadPorts(){const data=await api('/api/ports');const s=document.getElementById('port');s.innerHTML='';for(const p of data.ports){const o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o)}}
-async function connect(){try{const data=await api('/api/connect',{port:document.getElementById('port').value});update(data);showStatus(document.getElementById('port').value==='DEMO'?t('demoHint'):t('updated')+' '+data.updated);startAutoRefresh()}catch(e){showStatus(e.message,true)}}
-async function refresh(){try{update(await api('/api/read'))}catch(e){showStatus(e.message,true)}}
-async function setpoint(){try{update(await api('/api/setpoint',{target:number('target'),ramp:number('ramp')}))}catch(e){showStatus(e.message,true)}}
-async function oneStep(){try{const data=await api('/api/step',{target:number('warm_target'),step:number('step'),ramp:number('ramp')});update(data);if(data.warmup_done==='true'){stopRhythm();showStatus('Warmup target reached at '+data.warmup_next+' K')}}catch(e){showStatus(e.message,true)}}
-function toggleRhythm(){timer?stopRhythm():startRhythm()}
-function startRhythm(){oneStep();timer=setInterval(oneStep, Math.max(1000, number('interval')*60*1000));document.getElementById('rhythm_button').textContent=t('stopRhythm')}
-function stopRhythm(){if(timer)clearInterval(timer);timer=null;document.getElementById('rhythm_button').textContent=t('startRhythm')}
-function startAutoRefresh(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}
-function isStable(){const sample=Number(lastData.sample), setp=Number(lastData.setpoint), tol=number('stable_tol');return Number.isFinite(sample)&&Number.isFinite(setp)&&Math.abs(sample-setp)<=tol}
-function updateStable(){const el=document.getElementById('stable_state');if(!lastData.sample){el.textContent='--';return}if(isStable()){if(!stableSince)stableSince=Date.now();const mins=(Date.now()-stableSince)/60000;el.textContent=mins>=number('stable_min')?t('stableNow'):mins.toFixed(1)+' min'}else{stableSince=null;el.textContent=t('notStable')}}
-function stableLongEnough(){return stableSince && (Date.now()-stableSince)/60000>=number('stable_min')}
-function startHold(){holdActive=true;holdComplete=false;setpoint();updateHold()}
-function stopHold(){holdActive=false;holdComplete=false;delete document.getElementById('hold_status').dataset.start;document.getElementById('hold_status').textContent=t('holdReady')}
-function updateHold(){const el=document.getElementById('hold_status');if(!holdActive)return;if(!stableLongEnough()){el.textContent=t('holdWaiting');return}if(!el.dataset.start)el.dataset.start=String(Date.now());const elapsed=(Date.now()-Number(el.dataset.start))/60000;const remain=number('hold_min')-elapsed;if(remain<=0){holdComplete=true;holdActive=false;delete el.dataset.start;el.textContent=t('holdDone')}else{el.textContent=t('holdRunning')+': '+remain.toFixed(1)+' min left'}}
-function warnings(){const out=[];const setp=Number(document.getElementById('target').value), ramp=number('ramp'), heater=Number(lastData.heater), sample=Number(lastData.sample);if(setp>350)out.push('Setpoint > 350 K');if(ramp>10)out.push('Ramp > 10 K/min');if(heater>85)out.push('Heater output high: '+heater.toFixed(1)+'%');if(sample>350)out.push('Sample > 350 K');return out}
-function updateWarnings(){const items=warnings();const panel=document.getElementById('warning_panel');document.getElementById('warnings').textContent=items.length?items.join('; '):t('noWarnings');panel.className=items.length?'panel warn':'panel good'}
-function startLog(){logEnabled=true;document.getElementById('log_status').textContent=t('logStarted')+', '+logRows.length+' rows'}
-function stopLog(){logEnabled=false;document.getElementById('log_status').textContent=t('logStopped')+', '+logRows.length+' rows'}
-function appendLog(){const row=[new Date().toISOString(),lastData.cold_head,lastData.sample,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater,lastData.comm,document.getElementById('stable_state').textContent];logRows.push(row);document.getElementById('log_status').textContent=(logEnabled?t('logStarted'):t('logStopped'))+', '+logRows.length+' rows'}
-function downloadCsv(){const head=['timestamp','cold_head_K','sample_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_percent','comm','stable_state'];const csv=[head,...logRows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_temperature_log.csv';a.click();URL.revokeObjectURL(a.href)}
-loadPorts();setLanguage('en');
-</script>
-</body>
-</html>
-"""
+MAINTENANCE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lake Shore 336 Maintenance</title>
+<style>body{font-family:Arial,sans-serif;background:#101820;color:#edf7fa;margin:0}main{max-width:900px;margin:0 auto;padding:24px}.panel{border:1px solid #36cde8;background:#1d2b35;padding:16px;margin:14px 0;border-radius:6px}input,button{font:inherit;padding:8px;margin:4px;background:#14212a;color:#edf7fa;border:1px solid #59717c;border-radius:4px}button{background:#246577;font-weight:700}.danger{background:#632033}.status{white-space:pre-wrap;background:#0d171e;padding:10px;border-radius:4px}</style>
+</head><body><main><h1>Lake Shore 336 Maintenance</h1>
+<div class="panel" id="login"><h2>Login</h2><input id="password" type="password" placeholder="Maintenance password"><button onclick="login()">Login</button></div>
+<div class="panel"><h2>Log Control</h2><button onclick="pauseLog()">Pause logging</button><button onclick="resumeLog()">Resume logging</button><button onclick="newLog()">New log file</button><button onclick="downloadCsv()">Download CSV</button><button onclick="status()">Refresh status</button><div class="status" id="log_status">--</div></div>
+<div class="panel"><h2>PID Control</h2><button onclick="readPid()">Read PID</button><br><input id="pid_p" type="number" step="0.001" placeholder="P"><input id="pid_i" type="number" step="0.001" placeholder="I"><input id="pid_d" type="number" step="0.001" placeholder="D"><button class="danger" onclick="writePid()">Confirm PID Write</button><div class="status" id="pid_status">--</div></div>
+</main><script>
+async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw new Error(d.error||r.statusText);return d}
+function show(id,obj){document.getElementById(id).textContent=typeof obj==='string'?obj:JSON.stringify(obj,null,2)}
+async function login(){try{await api('/api/maintenance/login',{password:document.getElementById('password').value});show('log_status','Logged in');status()}catch(e){show('log_status',e.message)}}
+async function status(){try{show('log_status',await api('/api/log/status'))}catch(e){show('log_status',e.message)}}
+async function pauseLog(){try{show('log_status',await api('/api/log/pause',{}))}catch(e){show('log_status',e.message)}}
+async function resumeLog(){try{show('log_status',await api('/api/log/resume',{}))}catch(e){show('log_status',e.message)}}
+async function newLog(){try{show('log_status',await api('/api/log/new',{}))}catch(e){show('log_status',e.message)}}
+function downloadCsv(){location='/api/log/download'}
+async function readPid(){try{show('pid_status',await api('/api/pid'))}catch(e){show('pid_status',e.message)}}
+async function writePid(){if(!confirm('Write PID to Loop 1?'))return;try{show('pid_status',await api('/api/pid',{p:Number(pid_p.value),i:Number(pid_i.value),d:Number(pid_d.value)}))}catch(e){show('pid_status',e.message)}}
+status();
+</script></body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        if self.path == "/":
-            self.reply_html(dashboard_html())
-        elif self.path == "/api/ports":
+        path = urlparse(self.path).path
+        if path == "/":
+            try:
+                self.reply_html((ROOT / "web" / "index.html").read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                self.reply_json({"error": "Dashboard file not found"}, 500)
+        elif path == "/maintenance":
+            self.reply_html(MAINTENANCE_HTML)
+        elif path == "/api/ports":
             self.reply_json({"ports": available_ports()})
-        elif self.path == "/api/read":
-            self.with_client(lambda client: client.read_all())
+        elif path == "/api/read":
+            self.with_client(lambda client: client.read_all(), append_log=True)
+        elif path == "/api/log/status":
+            self.reply_json(LOGGER.status())
+        elif path == "/api/log/download":
+            self.reply_file(LOGGER.csv_path)
+        elif path == "/api/pid":
+            if not self.require_maintenance():
+                return
+            self.with_client(lambda client: {"pid": ",".join(client.read_pid())})
         else:
             self.send_error(404)
 
     def do_POST(self) -> None:
-        body = self.read_body()
-        if self.path == "/api/connect":
-            selected_port = str(body["port"])
-            client = DemoLakeShoreClient() if selected_port == "DEMO" else LakeShoreSerialClient(selected_port)
-            client.open()
-            STATE["client"] = client
-            self.reply_json(client.read_all())
-        elif self.path == "/api/setpoint":
-            self.with_client(lambda client: client.set_setpoint(float(body["target"]), float(body["ramp"])))
-        elif self.path == "/api/inputs":
+        path = urlparse(self.path).path
+        try:
+            body = self.read_body()
+        except (ValueError, OSError) as exc:
+            self.reply_json({"error": str(exc)}, 400)
+            return
+        if path == "/api/connect":
+            try:
+                selected_port = str(body["port"])
+                client = DemoLakeShoreClient() if selected_port == "DEMO" else LakeShoreSerialClient(selected_port)
+                client.open()
+                STATE["client"] = client
+                STATE["selected_port"] = selected_port
+                STATE["mode"] = "demo" if selected_port == "DEMO" else "hardware"
+                LOGGER.start_session(selected_port, str(STATE["mode"]))
+                payload = client.read_all()
+                LOGGER.append(payload)
+                payload["log_status"] = LOGGER.status()
+                self.reply_json(payload)
+            except (KeyError, ValueError, RuntimeError, OSError) as exc:
+                self.reply_json({"error": str(exc)}, 400)
+        elif path == "/api/setpoint":
+            self.with_client(
+                lambda client: client.set_setpoint(float(body["target"]), float(body["ramp"])),
+                append_log=True,
+            )
+        elif path == "/api/inputs":
             self.with_client(
                 lambda client: client.set_inputs(
                     str(body["cold_input"]),
                     str(body["sample_input"]),
                     str(body.get("control_input") or body["sample_input"]),
-                )
+                ),
+                append_log=True,
             )
-        elif self.path == "/api/control":
+        elif path == "/api/control":
             self.with_client(
                 lambda client: client.set_control(
                     float(body["target"]),
@@ -494,30 +647,89 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("cold_input") or "A"),
                     str(body.get("sample_input") or "B"),
                     str(body.get("control_input") or body.get("sample_input") or "B"),
-                )
+                ),
+                append_log=True,
             )
-        elif self.path == "/api/step":
-            self.with_client(
-                lambda client: client.step_warmup(
-                    float(body["target"]), float(body["step"]), float(body["ramp"])
-                )
-            )
+        elif path == "/api/maintenance/login":
+            try:
+                token = AUTH.login(str(body.get("password", "")))
+            except PermissionError as exc:
+                self.reply_json({"error": str(exc)}, 403)
+                return
+            self.reply_json({"ok": True}, headers={"Set-Cookie": f"ls336_maint={token}; Path=/; SameSite=Strict; HttpOnly"})
+        elif path == "/api/log/pause":
+            if not self.require_maintenance():
+                return
+            self.reply_json(LOGGER.pause("maintenance"))
+        elif path == "/api/log/resume":
+            if not self.require_maintenance():
+                return
+            self.reply_json(LOGGER.resume("maintenance"))
+        elif path == "/api/log/new":
+            if not self.require_maintenance():
+                return
+            self.reply_json(LOGGER.new_file("maintenance"))
+        elif path == "/api/pid":
+            if not self.require_maintenance():
+                return
+            try:
+                p, i, d = self.validate_pid(body)
+            except ValueError as exc:
+                self.reply_json({"error": str(exc)}, 400)
+                return
+            self.with_client(lambda client: self.write_pid(client, p, i, d))
         else:
             self.send_error(404)
 
-    def with_client(self, action) -> None:
+    def with_client(self, action, append_log: bool = False) -> None:
         client = STATE["client"]
         if client is None:
             self.reply_json({"error": "Not connected. Choose a port and click Connect."}, 400)
             return
         try:
-            self.reply_json(action(client))
+            payload = action(client)
+            if append_log and isinstance(payload, dict):
+                LOGGER.append(payload)
+                payload["log_status"] = LOGGER.status()
+            self.reply_json(payload)
         except Exception as exc:  # noqa: BLE001
-            self.reply_json({"error": str(exc)}, 500)
+            self.reply_json({"error": str(exc), "log_status": LOGGER.status()}, 500)
+
+    def write_pid(self, client, p: float, i: float, d: float) -> dict[str, str]:
+        result = client.set_pid(p, i, d)
+        LOGGER.audit_pid("maintenance", result["old"], result["new"])
+        return result
+
+    def validate_pid(self, body: dict[str, object]) -> tuple[float, float, float]:
+        try:
+            values = (float(body["p"]), float(body["i"]), float(body["d"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("PID values must be numeric") from exc
+        if any(value < 0 or value > 10000 for value in values):
+            raise ValueError("PID values must be within 0..10000")
+        return values
+
+    def require_maintenance(self) -> bool:
+        token = ""
+        raw_cookie = self.headers.get("Cookie", "")
+        if raw_cookie:
+            try:
+                parsed = cookies.SimpleCookie(raw_cookie)
+                if "ls336_maint" in parsed:
+                    token = parsed["ls336_maint"].value
+            except cookies.CookieError:
+                token = ""
+        if not AUTH.is_valid(token):
+            self.reply_json({"error": "Maintenance login required"}, 403)
+            return False
+        return True
 
     def read_body(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length", "0"))
-        return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Invalid JSON in request body: {exc}") from exc
 
     def reply_html(self, html: str) -> None:
         data = html.encode("utf-8")
@@ -527,10 +739,26 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def reply_json(self, payload: dict[str, object], status: int = 200) -> None:
+    def reply_json(
+        self, payload: dict[str, object], status: int = 200, headers: dict[str, str] | None = None
+    ) -> None:
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def reply_file(self, path: Path | None) -> None:
+        if path is None or not path.exists():
+            self.reply_json({"error": "No archived CSV is available yet."}, 404)
+            return
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -552,6 +780,8 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
     print(f"Lake Shore 336 browser dashboard: {url}")
+    if AUTH.password == DEFAULT_MAINT_PASSWORD:
+        print("Maintenance password uses the default value. Set LS336_MAINT_PASSWORD before production use.")
     if not args.no_open:
         webbrowser.open(url)
     server.serve_forever()

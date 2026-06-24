@@ -5,7 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EPICS_HOST_ARCH="${EPICS_HOST_ARCH:-}"
 
 if [ -z "$EPICS_HOST_ARCH" ] && [ -f "${PROJECT_ROOT}/configure/RELEASE.local" ]; then
-    EPICS_BASE="$(awk -F= '/^EPICS_BASE[[:space:]]*=/{gsub(/[[:space:]]/, "", $2); print $2}' "${PROJECT_ROOT}/configure/RELEASE.local" | tail -n 1)"
+    EPICS_BASE="$(awk -F= '/^EPICS_BASE[[:space:]]*\??=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}' "${PROJECT_ROOT}/configure/RELEASE.local" | tail -n 1)"
     if [ -n "${EPICS_BASE:-}" ] && [ -x "${EPICS_BASE}/startup/EpicsHostArch" ]; then
         EPICS_HOST_ARCH="$("${EPICS_BASE}/startup/EpicsHostArch")"
     fi

@@ -155,7 +155,8 @@ if [ ! -f /usr/include/tirpc/rpc/rpc.h ]; then
     exit 1
 fi
 
-if [ ! -f /usr/lib/x86_64-linux-gnu/libpcre.a ]; then
+PCRE_MULTIARCH="$(gcc -print-multiarch 2>/dev/null || dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)"
+if [ ! -f "/usr/lib/${PCRE_MULTIARCH}/libpcre.a" ]; then
     echo "Missing static PCRE library required by StreamDevice." >&2
     echo "Install it with:" >&2
     echo "  sudo apt update" >&2
@@ -188,7 +189,7 @@ PCRE=
 EOF
 cat > "${EPICS_ROOT}/support/StreamDevice/configure/CONFIG_SITE.local" <<EOF
 PCRE_INCLUDE=/usr/include
-PCRE_LIB=/usr/lib/x86_64-linux-gnu
+PCRE_LIB=/usr/lib/${PCRE_MULTIARCH}
 EOF
 make -j -C "${EPICS_ROOT}/support/StreamDevice/src"
 

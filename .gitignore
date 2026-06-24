@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 wsl-diagnostics.log
 .claude/
+logs/
 
 # EPICS/WSL local build outputs
 bin/
@@ -20,3 +21,8 @@ iocBoot/iocLS336/.iocsh_history
 
 # Locally downloaded EPICS dependency archives
 downloads/
+
+# PyInstaller packaging output
+dist/
+build/
+*.spec

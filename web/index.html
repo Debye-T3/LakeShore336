@@ -3,125 +3,639 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lake Shore 336 ARPES Panel</title>
+<title>Lake Shore 336 — Temperature Controller</title>
 <style>
-:root{--bg:#18232b;--panel:#22313b;--panel2:#1c2932;--cyan:#26e6ff;--pink:#ff8fb1;--green:#b6f59e;--yellow:#ffe29a;--text:#e8f4f7;--muted:#91a8b3;--line:#35cde8;--danger:#ff5c7a}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}main{max-width:1180px;margin:0 auto;padding:18px}header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.title{font-size:24px;font-weight:800;letter-spacing:.5px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}select,input,button{font:inherit;border:1px solid #45616e;border-radius:4px;padding:8px 10px;background:#17252d;color:var(--text)}button{cursor:pointer;background:#276577;border-color:var(--cyan);color:#eaffff;font-weight:800}button.secondary{background:#33454f;color:#e8f4f7;border-color:#59717c}button.danger{background:#5a202d;border-color:var(--danger)}.layout{display:grid;grid-template-columns:360px 1fr;gap:14px}.panel{background:var(--panel);border:2px solid var(--line);border-radius:6px;padding:14px;box-shadow:0 0 12px rgba(38,230,255,.12)}.status{background:#b8f7a8;color:#17311d;text-align:center;font-size:30px;font-weight:900;border-radius:6px;padding:16px;margin-bottom:12px}.metric{background:var(--panel2);border-left:4px solid var(--cyan);padding:12px;margin:10px 0}.metric.sample{border-left-color:var(--pink)}.label{color:var(--muted);font-size:13px;font-weight:800;text-transform:uppercase}.temp{font-size:34px;font-weight:900;margin-top:8px;color:var(--cyan)}.metric.sample .temp{color:var(--pink)}.chart-wrap{background:#21313b;border:1px solid #5f7b86;border-radius:4px;margin-top:12px;padding:10px}.chart-title{display:flex;justify-content:space-between;gap:10px;align-items:center;color:#cfe9ef;font-size:13px;font-weight:800;margin-bottom:8px}.legend{display:flex;gap:10px;color:#b8cbd2;font-size:12px}.swatch{display:inline-block;width:18px;height:4px;border-radius:8px;margin-right:5px;vertical-align:middle}.cold{background:var(--cyan)}.sample-line{background:var(--pink)}canvas{display:block;width:100%;height:300px;background:#253640;border:1px solid #4b6773;border-radius:4px}.section-title{font-size:20px;color:var(--yellow);font-weight:900;margin:0 0 10px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{color:var(--cyan);font-weight:800;font-size:13px}.readback{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.readback div{background:var(--panel2);border:1px solid #3d5965;border-radius:4px;padding:10px}.readback strong{display:block;color:var(--green);font-size:21px;margin-top:4px}.pid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px}.logbox{height:100px;overflow:auto;background:#142027;border:1px solid #3d5965;color:var(--green);padding:10px;font-family:Menlo,Consolas,monospace;font-size:13px}.warning{margin-top:10px;border-radius:6px;overflow:hidden}.warning-header{display:flex;align-items:center;gap:10px;padding:12px 14px;font-weight:800;font-size:15px}.warning-header.safe{background:#1a3824;color:var(--green);border:1px solid #298a3c}.warning-header.caution{background:#302815;color:#ffd68a;border:1px solid #7e5e26}.warning-header.danger{background:#3d1018;color:var(--danger);border:1px solid #8a2040}.warning-icon{font-size:22px;line-height:1}.warning-list{list-style:none;margin:0;padding:8px 14px;background:#142027;border:1px solid #3d5965;border-top:none}.warning-list li{padding:6px 0;display:flex;align-items:flex-start;gap:8px;font-size:14px;color:#ffd68a;border-bottom:1px solid #253640}.warning-list li:last-child{border-bottom:none}.warning-list .reason{color:var(--muted);font-size:12px;margin-top:2px}.warning-level{display:inline-block;border-radius:3px;padding:2px 6px;font-size:11px;font-weight:800;margin-left:auto;flex-shrink:0}.warning-level.caution{background:#5c4200;color:#ffd68a}.warning-level.danger{background:#6b1528;color:var(--danger)}.pid-readback{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}.pid-readback div{background:var(--panel2);border:1px solid #3d5965;border-radius:4px;padding:10px}.pid-readback strong{display:block;color:var(--yellow);font-size:21px;margin-top:4px}.pid-status{font-size:12px;font-weight:400;margin-left:6px}.ok{color:var(--green)}.bad{color:var(--danger)}@media(max-width:900px){.layout,.grid,.readback{grid-template-columns:1fr}.toolbar{justify-content:flex-start}}
+/* ── Design Tokens ── */
+:root {
+  --bg-base:        #0d1117;
+  --bg-surface:     #161b22;
+  --bg-elevated:    #1c2333;
+  --bg-input:       #0f1620;
+  --border-default: #2a3343;
+  --border-accent:  #3b5474;
+  --text-primary:   #eaf0f6;
+  --text-secondary: #8fa3b8;
+  --text-muted:     #5c7085;
+  --accent-cyan:    #22d3ee;
+  --accent-cyan-dim:#0e7490;
+  --accent-pink:    #f472b6;
+  --accent-amber:   #fbbf24;
+  --accent-green:   #4ade80;
+  --accent-red:     #f87171;
+  --accent-yellow:  #facc15;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.04);
+  --shadow-glow: 0 0 24px rgba(34,211,238,.08);
+  --transition-fast: 150ms ease;
+  --transition-smooth: 250ms ease;
+}
+
+/* ── Reset & Base ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ── */
+main{max-width:1240px;margin:0 auto;padding:20px 24px}
+
+/* ── Header ── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  margin-bottom:20px;padding:16px 20px;
+  background:var(--bg-elevated);border-radius:var(--radius-lg);
+  border:1px solid var(--border-default);box-shadow:var(--shadow-card);
+}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.topbar-left h1{font-size:18px;font-weight:700;color:var(--text-primary);letter-spacing:-0.01em}
+.topbar-left .brand-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.topbar-left .brand-dot.live{background:var(--accent-green);box-shadow:0 0 8px rgba(74,222,128,.5)}
+.topbar-left .brand-dot.dead{background:var(--accent-red);box-shadow:0 0 8px rgba(248,113,113,.4)}
+
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right select,.topbar-right button{font:inherit}
+
+/* ── Controls (select, input, button) ── */
+select,input[type=number]{
+  background:var(--bg-input);color:var(--text-primary);
+  border:1px solid var(--border-default);border-radius:var(--radius-sm);
+  padding:8px 12px;font-size:13px;outline:none;
+  transition:border-color var(--transition-fast);
+}
+select:focus,input[type=number]:focus{border-color:var(--accent-cyan);box-shadow:0 0 0 3px rgba(34,211,238,.12)}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238fa3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+input[type=number]{width:100%;-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{opacity:1}
+
+button{
+  cursor:pointer;font-weight:600;font-size:13px;border-radius:var(--radius-sm);
+  padding:8px 16px;border:none;outline:none;white-space:nowrap;
+  transition: all var(--transition-fast);
+  letter-spacing:0.01em;
+}
+button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
+
+.btn-primary{
+  background:var(--accent-cyan-dim);color:#fff;
+  border:1px solid rgba(34,211,238,.3);
+}
+.btn-primary:hover{background:#0c889e;box-shadow:0 0 12px rgba(34,211,238,.15)}
+
+.btn-secondary{
+  background:var(--bg-elevated);color:var(--text-secondary);
+  border:1px solid var(--border-default);
+}
+.btn-secondary:hover{color:var(--text-primary);border-color:var(--border-accent)}
+
+.btn-danger{
+  background:rgba(248,113,113,.12);color:var(--accent-red);
+  border:1px solid rgba(248,113,113,.25);
+}
+.btn-danger:hover{background:rgba(248,113,113,.22)}
+
+/* ── Two-Column Grid ── */
+.dashboard{display:grid;grid-template-columns:380px 1fr;gap:16px}
+
+/* ── Panel ── */
+.panel{
+  background:var(--bg-surface);border:1px solid var(--border-default);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-card);
+  overflow:hidden;
+}
+.panel-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid var(--border-default);
+  background:var(--bg-elevated);
+}
+.panel-header h2{font-size:14px;font-weight:700;color:var(--text-primary);text-transform:uppercase;letter-spacing:0.04em}
+.panel-body{padding:16px 18px}
+
+/* ── Sidebar: Temperature Cards ── */
+.temp-card{
+  display:flex;flex-direction:column;gap:8px;padding:16px 18px;
+  border-radius:var(--radius-md);margin-bottom:12px;
+  background:var(--bg-elevated);border:1px solid var(--border-default);
+  transition:box-shadow var(--transition-smooth);
+}
+.temp-card.cold{border-left:3px solid var(--accent-cyan)}
+.temp-card.sample-card{border-left:3px solid var(--accent-pink)}
+.temp-card .temp-label{
+  font-size:11px;font-weight:700;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:0.06em;
+  display:flex;align-items:center;gap:8px;
+}
+.temp-card .temp-label .ch-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:20px;height:20px;border-radius:50%;
+  background:rgba(34,211,238,.12);color:var(--accent-cyan);
+  font-size:10px;font-weight:800;
+}
+.temp-card.sample-card .temp-label .ch-badge{background:rgba(244,114,182,.12);color:var(--accent-pink)}
+.temp-card .temp-value{
+  font-size:42px;font-weight:800;line-height:1;letter-spacing:-0.02em;
+  color:var(--accent-cyan);
+}
+.temp-card.sample-card .temp-value{color:var(--accent-pink)}
+.temp-card .temp-unit{font-size:18px;font-weight:500;color:var(--text-muted);margin-left:2px}
+
+/* ── Sidebar: Status Badge ── */
+.status-badge{
+  text-align:center;padding:12px 18px;border-radius:var(--radius-md);
+  font-weight:700;font-size:13px;letter-spacing:0.04em;margin-bottom:12px;
+  transition:all var(--transition-smooth);
+}
+.status-badge.live{background:rgba(74,222,128,.1);color:var(--accent-green);border:1px solid rgba(74,222,128,.18)}
+.status-badge.dead{background:rgba(248,113,113,.08);color:var(--accent-red);border:1px solid rgba(248,113,113,.15)}
+.status-badge.demo-mode{background:rgba(250,204,21,.08);color:var(--accent-yellow);border:1px solid rgba(250,204,21,.15)}
+
+/* ── Chart ── */
+.chart-container{
+  background:var(--bg-elevated);border:1px solid var(--border-default);
+  border-radius:var(--radius-md);padding:14px 16px;
+}
+.chart-container canvas{
+  display:block;width:100%;height:280px;
+  background:var(--bg-input);border-radius:var(--radius-sm);
+  border:1px solid var(--border-default);
+}
+
+/* ── Readback Grid ── */
+.readback-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;
+}
+.readback-cell{
+  background:var(--bg-elevated);border:1px solid var(--border-default);
+  border-radius:var(--radius-md);padding:12px 14px;
+  transition:border-color var(--transition-fast);
+}
+.readback-cell .rb-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px}
+.readback-cell .rb-value{font-size:22px;font-weight:700;color:var(--accent-green);letter-spacing:-0.01em}
+.readback-cell.highlight .rb-value{color:var(--accent-cyan)}
+.readback-cell.sample-highlight .rb-value{color:var(--accent-pink)}
+.readback-cell.warn-cell .rb-value{color:var(--accent-amber)}
+
+/* ── PID Readback ── */
+.pid-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.pid-cell{
+  background:var(--bg-elevated);border:1px solid var(--border-default);
+  border-radius:var(--radius-md);padding:10px 14px;
+}
+.pid-cell .pid-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em}
+.pid-cell .pid-value{font-size:20px;font-weight:700;color:var(--accent-amber);margin-top:2px}
+
+/* ── Form Grid ── */
+.form-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;
+}
+.form-field{display:flex;flex-direction:column;gap:6px}
+.form-field label{
+  font-size:11px;font-weight:700;color:var(--text-secondary);
+  text-transform:uppercase;letter-spacing:0.05em;
+}
+.form-divider{
+  grid-column:1/-1;border-top:1px solid var(--border-default);
+  margin:4px 0 0;padding-top:2px;
+}
+
+/* ── Actions Row ── */
+.actions-row{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:16px 18px;background:var(--bg-elevated);
+  border-radius:var(--radius-md);border:1px solid var(--border-default);
+  margin-bottom:14px;
+}
+.actions-row .ramp-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+.actions-row .ramp-check input[type=checkbox]{accent-color:var(--accent-cyan);width:16px;height:16px;cursor:pointer}
+.actions-row .stable-indicator{font-size:13px;font-weight:700;margin-left:auto}
+.actions-row .stable-indicator.ok{color:var(--accent-green)}
+.actions-row .stable-indicator.bad{color:var(--accent-red)}
+
+/* ── Warning Panel ── */
+.warning-panel{border-radius:var(--radius-md);overflow:hidden;margin-top:12px;transition:all var(--transition-smooth)}
+.warning-panel .warn-header{
+  display:flex;align-items:center;gap:10px;padding:12px 16px;font-weight:700;font-size:13px;
+  cursor:default;transition:all var(--transition-smooth);
+}
+.warning-panel .warn-header svg{width:18px;height:18px;flex-shrink:0}
+.warn-header.clear{background:rgba(74,222,128,.06);color:var(--accent-green);border:1px solid rgba(74,222,128,.15)}
+.warn-header.warnings{background:rgba(250,204,21,.06);color:var(--accent-amber);border:1px solid rgba(250,204,21,.15)}
+.warn-header.critical{background:rgba(248,113,113,.08);color:var(--accent-red);border:1px solid rgba(248,113,113,.15)}
+.warn-list{list-style:none;margin:0;padding:8px 16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-top:none}
+.warn-list li{padding:7px 0;font-size:13px;color:var(--accent-amber);border-bottom:1px solid var(--border-default);display:flex;align-items:center;gap:8px}
+.warn-list li:last-child{border-bottom:none}
+.warn-list li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent-amber);flex-shrink:0}
+
+/* ── Log Panel ── */
+.log-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.log-cell{
+  background:var(--bg-elevated);border:1px solid var(--border-default);
+  border-radius:var(--radius-md);padding:10px 14px;
+}
+.log-cell .log-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em}
+.log-cell .log-value{font-size:15px;font-weight:700;margin-top:2px;color:var(--text-primary)}
+.log-cell .log-value.on{color:var(--accent-green)}.log-cell .log-value.paused{color:var(--accent-red)}
+
+.log-console{
+  height:110px;overflow:auto;background:var(--bg-input);
+  border:1px solid var(--border-default);border-radius:var(--radius-sm);
+  color:var(--accent-green);padding:10px 14px;font-family:"SF Mono","Cascadia Code",Consolas,monospace;
+  font-size:12px;line-height:1.6;
+}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .dashboard{grid-template-columns:1fr}
+  .readback-grid,.form-grid,.pid-row,.log-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:520px){
+  .topbar{flex-direction:column;align-items:stretch}
+  .topbar-right{flex-wrap:wrap}
+  .readback-grid,.form-grid,.pid-row,.log-grid{grid-template-columns:1fr}
+  .actions-row{gap:8px}
+}
 </style>
 </head>
 <body>
 <main>
-<header>
-  <div class="title" data-i18n="title">Lake Shore 336 ARPES Temp Control</div>
-  <div class="toolbar"><select id="language" onchange="setLanguage(this.value)"><option value="en">English</option><option value="zh">中文</option></select><select id="port"></select><button onclick="connect()" data-i18n="connect">CONNECT</button><button class="secondary" onclick="refresh()" data-i18n="refresh">READ</button></div>
-</header>
-<div class="layout">
+
+<!-- ═══ Top Bar ═══ -->
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>Lake Shore 336</h1>
+    <span class="brand-dot dead" id="status_dot" title="Connection status"></span>
+  </div>
+  <div class="topbar-right">
+    <select id="port"></select>
+    <button class="btn-primary" onclick="connect()">Connect</button>
+    <button class="btn-secondary" onclick="refresh()">Refresh</button>
+  </div>
+</div>
+
+<!-- ═══ Dashboard Grid ═══ -->
+<div class="dashboard">
+
+  <!-- ── Left Sidebar ── -->
   <aside>
-    <div class="status" id="connect_state">DISCONNECTED</div>
+    <div class="status-badge dead" id="connect_state">DISCONNECTED</div>
+
+    <div class="temp-card cold">
+      <div class="temp-label">Cold Head <span class="ch-badge" id="cold_input_badge">A</span></div>
+      <div><span class="temp-value" id="cold_head">--</span><span class="temp-unit">K</span></div>
+    </div>
+    <div class="temp-card sample-card">
+      <div class="temp-label">Sample Stage <span class="ch-badge" id="sample_input_badge">B</span></div>
+      <div><span class="temp-value" id="sample">--</span><span class="temp-unit">K</span></div>
+    </div>
+
     <div class="panel">
-      <div class="metric"><div class="label"><span data-i18n="coldHead">Cold Head Temp</span> <span id="cold_input_badge">A</span></div><div class="temp"><span id="cold_head">--</span> K</div></div>
-      <div class="metric sample"><div class="label"><span data-i18n="sample">Sample Stage Temp</span> <span id="sample_input_badge">B</span></div><div class="temp"><span id="sample">--</span> K</div></div>
-      <div class="chart-wrap">
-        <div class="chart-title"><span data-i18n="trend">Temperature Trend</span><span class="legend"><span><i class="swatch cold"></i>Cold Head</span><span><i class="swatch sample-line"></i>Sample</span></span></div>
-        <canvas id="chart" width="640" height="320"></canvas>
+      <div class="panel-header">
+        <h2>Temperature Trend</h2>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text-muted)">
+          <span><span style="display:inline-block;width:14px;height:3px;border-radius:2px;background:var(--accent-cyan);vertical-align:middle;margin-right:5px"></span>Cold Head</span>
+          <span><span style="display:inline-block;width:14px;height:3px;border-radius:2px;background:var(--accent-pink);vertical-align:middle;margin-right:5px"></span>Sample</span>
+        </div>
+      </div>
+      <div class="panel-body" style="padding:0 12px 12px">
+        <div class="chart-container">
+          <canvas id="chart" width="640" height="280"></canvas>
+        </div>
       </div>
     </div>
   </aside>
+
+  <!-- ── Right Content ── -->
   <section>
+
+    <!-- ── Control Panel ── -->
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header"><h2>Temperature Control</h2></div>
+      <div class="panel-body">
+
+        <!-- Readbacks: Setpoint, Ramp, Heater Range, Heater % -->
+        <div class="readback-grid">
+          <div class="readback-cell highlight"><div class="rb-label">Setpoint</div><div class="rb-value"><span id="setpoint">--</span> K</div></div>
+          <div class="readback-cell"><div class="rb-label">Ramp Rate</div><div class="rb-value"><span id="ramp_rate">--</span> K/min</div></div>
+          <div class="readback-cell"><div class="rb-label">Heater Range</div><div class="rb-value" id="heater_range">--</div></div>
+          <div class="readback-cell warn-cell"><div class="rb-label">Heater Output</div><div class="rb-value"><span id="heater">--</span> %</div></div>
+        </div>
+
+        <!-- Input Channels A/B/C/D -->
+        <div class="readback-grid" style="margin-bottom:18px">
+          <div class="readback-cell"><div class="rb-label">Input A</div><div class="rb-value"><span id="input_a">--</span> K</div></div>
+          <div class="readback-cell"><div class="rb-label">Input B</div><div class="rb-value"><span id="input_b">--</span> K</div></div>
+          <div class="readback-cell"><div class="rb-label">Input C</div><div class="rb-value"><span id="input_c">--</span> K</div></div>
+          <div class="readback-cell"><div class="rb-label">Input D</div><div class="rb-value"><span id="input_d">--</span> K</div></div>
+        </div>
+
+        <!-- PID Readback -->
+        <div class="pid-row">
+          <div class="pid-cell"><div class="pid-label">P (Proportional)</div><div class="pid-value" id="pid_p_rb">--</div></div>
+          <div class="pid-cell"><div class="pid-label">I (Integral)</div><div class="pid-value" id="pid_i_rb">--</div></div>
+          <div class="pid-cell"><div class="pid-label">D (Derivative)</div><div class="pid-value" id="pid_d_rb">--</div></div>
+        </div>
+
+        <!-- Control Inputs -->
+        <div class="form-grid">
+          <div class="form-field"><label>Cold Input Channel</label><select id="cold_input" onchange="applyInputs()"><option>A</option><option>B</option><option>C</option><option>D</option></select></div>
+          <div class="form-field"><label>Sample Input Channel</label><select id="sample_input" onchange="applyInputs()"><option>A</option><option value="B" selected>B</option><option>C</option><option>D</option></select></div>
+          <div class="form-field"><label>Control Input Channel</label><select id="control_input" onchange="applyInputs()"><option>A</option><option value="B" selected>B</option><option>C</option><option>D</option></select></div>
+          <div class="form-divider"></div>
+          <div class="form-field"><label>Setpoint (K)</label><input id="target" type="number" value="90" step="0.1" min="0" max="350"></div>
+          <div class="form-field">
+            <label>Ramp Rate (K/min)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="ramp" type="number" value="0.5" step="0.1" min="0" max="10" style="flex:1">
+              <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary);white-space:nowrap;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:600">
+                <input id="enable_ramp" type="checkbox" checked style="width:15px;height:15px;accent-color:var(--accent-cyan);cursor:pointer">Enable
+              </label>
+            </div>
+          </div>
+          <div class="form-field"><label>Heater Range</label><select id="range"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3" selected>High</option></select></div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="actions-row">
+          <button class="btn-primary" onclick="applyControl()">Apply Settings</button>
+          <div style="flex:1"></div>
+          <button class="btn-danger" onclick="turnOff()">Heater Off</button>
+          <span class="stable-indicator ok" id="stable_state">--</span>
+        </div>
+
+        <!-- Warning Panel -->
+        <div class="warning-panel" id="warning_panel">
+          <div class="warn-header clear" id="warning_header">
+            <svg id="warn_icon_ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+            <svg id="warn_icon_alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="warning_title">All Systems Nominal</span>
+          </div>
+          <ul class="warn-list" id="warning_list" style="display:none"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log Archive Panel ── -->
     <div class="panel">
-      <h2 class="section-title" data-i18n="control">Temperature Control</h2>
-      <div class="readback">
-        <div><span class="label" data-i18n="setpoint">Setpoint</span><strong><span id="setpoint">--</span> K</strong></div>
-        <div><span class="label" data-i18n="rampRate">Ramp</span><strong><span id="ramp_rate">--</span> K/min</strong></div>
-        <div><span class="label" data-i18n="heaterRange">Heater Range</span><strong id="heater_range">--</strong></div>
-        <div><span class="label" data-i18n="heater">Heater</span><strong><span id="heater">--</span> %</strong></div>
-      </div>
-      <div class="readback">
-        <div><span class="label" data-i18n="inputA">Input A</span><strong><span id="input_a">--</span> K</strong></div>
-        <div><span class="label" data-i18n="inputB">Input B</span><strong><span id="input_b">--</span> K</strong></div>
-        <div><span class="label" data-i18n="inputC">Input C</span><strong><span id="input_c">--</span> K</strong></div>
-        <div><span class="label" data-i18n="inputD">Input D</span><strong><span id="input_d">--</span> K</strong></div>
-      </div>
-      <div class="pid-readback">
-        <div><span class="label" data-i18n="pidP">P</span><strong id="pid_p_rb">--</strong></div>
-        <div><span class="label" data-i18n="pidI">I</span><strong id="pid_i_rb">--</strong></div>
-        <div><span class="label" data-i18n="pidD">D</span><strong id="pid_d_rb">--</strong></div>
-      </div>
-      <div class="grid">
-        <div class="field"><label data-i18n="coldInput">Cold Input</label><select id="cold_input" onchange="applyInputs()"><option>A</option><option>B</option><option>C</option><option>D</option></select></div>
-        <div class="field"><label data-i18n="sampleInput">Sample Input</label><select id="sample_input" onchange="applyInputs()"><option>A</option><option value="B" selected>B</option><option>C</option><option>D</option></select></div>
-        <div class="field"><label data-i18n="controlInput">Control Input</label><select id="control_input" onchange="applyInputs()"><option>A</option><option value="B" selected>B</option><option>C</option><option>D</option></select></div>
-        <div class="field"><label data-i18n="setpointK">Setpoint (K)</label><input id="target" type="number" value="90" step="0.1"></div>
-        <div class="field"><label data-i18n="rampKmin">Ramp (K/min)</label><input id="ramp" type="number" value="0.5" step="0.1"></div>
-        <div class="field"><label data-i18n="heaterRange">Heater Range</label><select id="range"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3" selected>High</option></select></div>
-      </div>
-      <div class="actions"><button onclick="applyControl()" data-i18n="apply">APPLY</button><button class="danger" onclick="turnOff()" data-i18n="off">OFF</button><label><input id="enable_ramp" type="checkbox" checked> <span data-i18n="enableRamp">Enable ramp</span></label><span id="stable_state" class="ok">--</span></div>
-      <div class="warning" id="warning_panel">
-        <div class="warning-header safe" id="warning_header"><span class="warning-icon" id="warning_icon">&#9678;</span><span id="warning_title" data-i18n="noWarnings">No warnings</span></div>
-        <ul class="warning-list" id="warning_list" style="display:none"></ul>
+      <div class="panel-header"><h2>Log Archive</h2></div>
+      <div class="panel-body">
+        <div class="log-grid">
+          <div class="log-cell"><div class="log-label">Status</div><div class="log-value paused" id="recording_state">--</div></div>
+          <div class="log-cell"><div class="log-label">CSV File</div><div class="log-value" id="log_file" style="font-size:13px;word-break:break-all">--</div></div>
+          <div class="log-cell"><div class="log-label">Rows Written</div><div class="log-value" id="log_rows">0</div></div>
+          <div class="log-cell"><div class="log-label">Last Write</div><div class="log-value" id="last_write" style="font-size:13px">--</div></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:10px">
+          <button class="btn-secondary" onclick="downloadCsv()">Download CSV</button>
+          <button class="btn-secondary" onclick="openMaintenance()">Maintenance</button>
+        </div>
+        <div class="log-console" id="system_log"></div>
       </div>
     </div>
-    <div class="panel" style="margin-top:14px">
-      <h2 class="section-title" data-i18n="experiment">Experiment Tools</h2>
-      <div class="grid">
-        <div class="field"><label data-i18n="stepK">Step K</label><input id="step" type="number" value="5" step="0.1"></div>
-        <div class="field"><label data-i18n="rhythmInterval">Rhythm min</label><input id="interval" type="number" value="5" step="0.1"></div>
-        <div class="field"><label data-i18n="stableTol">Stable ±K</label><input id="stable_tol" type="number" value="0.2" step="0.05"></div>
-      </div>
-      <div class="actions"><button onclick="oneStep()" data-i18n="advance">STEP</button><button class="secondary" onclick="toggleRhythm()" id="rhythm_button" data-i18n="startRhythm">START RHYTHM</button><button class="secondary" onclick="startLog()" data-i18n="startLog">LOG</button><button class="secondary" onclick="downloadCsv()" data-i18n="downloadCsv">CSV</button></div>
-      <div class="logbox" id="system_log"></div>
-    </div>
+
   </section>
 </div>
 </main>
+
 <script>
-let backend=false,timer=null,autoTimer=null,logRows=[],logEnabled=false,lang='en',lastData={},history=[];
+// ── State ──
+let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={};
 let editingInputs=new Set();
 let demo={inputs:{A:82.4,B:84.1,C:296,D:296},coldInput:'A',sampleInput:'B',controlInput:'B',setpoint:90,ramp:.5,range:3,pid:[40,80,2],last:performance.now()};
 const rangeNames=['Off','Low','Medium','High'];
-const tr={en:{title:'Lake Shore 336 ARPES Temp Control',connect:'CONNECT',refresh:'READ',coldHead:'Cold Head Temp',sample:'Sample Stage Temp',trend:'Temperature Trend',control:'Temperature Control',setpoint:'Setpoint',rampRate:'Ramp',heaterRange:'Heater Range',heater:'Heater',inputA:'Input A',inputB:'Input B',inputC:'Input C',inputD:'Input D',coldInput:'Cold Input',sampleInput:'Sample Input',controlInput:'Control Input',setpointK:'Setpoint (K)',rampKmin:'Ramp (K/min)',apply:'APPLY',off:'OFF',enableRamp:'Enable ramp',experiment:'Experiment Tools',stepK:'Step K',rhythmInterval:'Rhythm min',stableTol:'Stable ±K',advance:'STEP',startRhythm:'START RHYTHM',stopRhythm:'STOP RHYTHM',startLog:'LOG',downloadCsv:'CSV',connected:'CONNECTED',disconnected:'DISCONNECTED',noWarnings:'No warnings',warningsFound:'warnings',wSetpointLimit:'Setpoint > 350 K',wSetpointLimitReason:'Reduce setpoint below 350 K to avoid sample damage.',wRampLimit:'Ramp > 10 K/min',wRampLimitReason:'Use ramp ≤ 10 K/min. Fast ramps may overshoot the target.',wHeaterHigh:'Heater output high',wHeaterHighReason:'Heater output approaching maximum. Check PID tuning and thermal load.',wSensorZero:'Sensor channel {ch} reads 0 K',wSensorZeroReason:'This channel may have no sensor connected or the sensor type is not configured on the instrument.',wControlZero:'Control input {ch} reads 0 K',wControlZeroReason:'PID loop is using a channel with no valid temperature. Change Control Input to a connected sensor.',wSetpointFar:'Setpoint {diff} K above sample',wSetpointFarReason:'Large temperature jump. Consider using STEP warming with rhythm control.',wCaution:'CAUTION',wDanger:'DANGER',notStable:'Not stable',stable:'Stable',pidP:'P',pidI:'I',pidD:'D'},zh:{title:'Lake Shore 336 ARPES 温控',connect:'连接',refresh:'读取',coldHead:'冷头温度',sample:'样品台温度',trend:'温度趋势',control:'温度控制',setpoint:'设定温度',rampRate:'升温速率',heaterRange:'加热档位',heater:'加热输出',inputA:'Input A',inputB:'Input B',inputC:'Input C',inputD:'Input D',coldInput:'冷头 Input',sampleInput:'样品 Input',controlInput:'控温 Input',setpointK:'设定温度 (K)',rampKmin:'升温速率 (K/min)',apply:'应用',off:'关闭',enableRamp:'启用升温',experiment:'实验工具',stepK:'每步 K',rhythmInterval:'节奏 min',stableTol:'稳定 ±K',advance:'前进一步',startRhythm:'开始节奏',stopRhythm:'停止节奏',startLog:'记录',downloadCsv:'CSV',connected:'已连接',disconnected:'未连接',noWarnings:'无警告',warningsFound:'条警告',wSetpointLimit:'设定温度 > 350 K',wSetpointLimitReason:'请将设定温度降低到 350 K 以下，避免损坏样品。',wRampLimit:'升温速率 > 10 K/min',wRampLimitReason:'建议使用 ≤ 10 K/min 的升温速率，过快可能过冲。',wHeaterHigh:'加热输出过高',wHeaterHighReason:'加热器输出接近上限，请检查 PID 参数和热负载。',wSensorZero:'传感器通道 {ch} 读数为 0 K',wSensorZeroReason:'该通道可能未接传感器或仪器端传感器类型未配置。',wControlZero:'控温通道 {ch} 读数为 0 K',wControlZeroReason:'PID 反馈使用了无效温度通道，请将 Control Input 切换到已接传感器的通道。',wSetpointFar:'设定温度超出当前样品 {diff} K',wSetpointFarReason:'跳变较大，建议使用 STEP 节奏升温逐步逼近。',wCaution:'注意',wDanger:'危险',notStable:'未稳定',stable:'已稳定',pidP:'P',pidI:'I',pidD:'D'}};
-function t(k){return tr[lang][k]||tr.en[k]||k}function number(id){return Number(document.getElementById(id).value)}function setLanguage(v){lang=v;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));document.getElementById('rhythm_button').textContent=timer?t('stopRhythm'):t('startRhythm');document.getElementById('connect_state').textContent=lastData.comm?t('connected'):t('disconnected');updateWarnings()}
-async function api(path,body){const res=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!res.ok)throw new Error((await res.json()).error||res.statusText);return res.json()}
-function log(m){const el=document.getElementById('system_log');el.innerHTML='['+new Date().toLocaleTimeString()+'] '+m+'<br>'+el.innerHTML}
-async function loadPorts(){try{const d=await api('/api/ports');backend=true;fillPorts(d.ports)}catch{backend=false;fillPorts(['DEMO'])}}function fillPorts(ports){const s=document.getElementById('port');s.innerHTML='';ports.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o)})}
-async function connect(){try{const d=backend?await api('/api/connect',{port:document.getElementById('port').value}):simulate();update(d);document.getElementById('connect_state').textContent=t('connected');startAuto();log('CONNECTED')}catch(e){log('ERROR '+e.message)}}
-async function refresh(){try{update(backend?await api('/api/read'):simulate())}catch(e){log('ERROR '+e.message)}}
-function inputBody(){return{cold_input:document.getElementById('cold_input').value,sample_input:document.getElementById('sample_input').value,control_input:document.getElementById('control_input').value}}
-async function applyInputs(){const body=inputBody();try{update(backend?await api('/api/inputs',body):demoInputs(body));log('INPUTS cold='+body.cold_input+' sample='+body.sample_input+' control='+body.control_input)}catch(e){log('ERROR '+e.message)}}
-async function applyControl(){const body={...inputBody(),target:number('target'),ramp:document.getElementById('enable_ramp').checked?number('ramp'):0,range:Number(document.getElementById('range').value)};try{const result=backend?await api('/api/control',body):demoControl(body);update(result);document.getElementById('range').value=body.range;editingInputs.delete('range');window._rangeLock=Date.now()+3000;log('APPLY setpoint='+body.target+' control='+body.control_input+' range='+rangeNames[body.range])}catch(e){log('ERROR '+e.message)}}
-function turnOff(){document.getElementById('range').value='0';document.getElementById('enable_ramp').checked=false;applyControl()}
-function oneStep(){document.getElementById('target').value=Math.min(number('target')+number('step'),350);applyControl()}function toggleRhythm(){if(timer){clearInterval(timer);timer=null;document.getElementById('rhythm_button').textContent=t('startRhythm')}else{oneStep();timer=setInterval(oneStep,Math.max(1000,number('interval')*60000));document.getElementById('rhythm_button').textContent=t('stopRhythm')}}
+
+function number(id){const el=document.getElementById(id);return el?Number(el.value):NaN}
+
+// ── Connection & Ports ──
+async function api(path,body){
+  const res=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  if(!res.ok)throw new Error((await res.json()).error||res.statusText);
+  return res.json();
+}
+function log(m){
+  const el=document.getElementById('system_log');
+  el.innerHTML='['+new Date().toLocaleTimeString()+'] '+m+'<br>'+el.innerHTML;
+}
+async function loadPorts(){
+  try{const d=await api('/api/ports');backend=true;fillPorts(d.ports);await refreshLogStatus()}catch{
+    backend=false;fillPorts(['DEMO']);logEnabled=true;
+    log('Demo mode — CSV is browser-temporary only. Connect a real instrument for permanent archiving.');
+    updateLogStatus({active:true,filename:'demo temporary CSV',rows:0,last_write_iso:'--'});
+  }
+}
+function fillPorts(ports){
+  const s=document.getElementById('port');
+  s.innerHTML='';
+  ports.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o)});
+}
+async function connect(){
+  try{
+    const port=document.getElementById('port').value;
+    const d=backend?await api('/api/connect',{port}):simulate();
+    update(d);
+    setStatus(port==='DEMO'?'demo':'live',port==='DEMO'?'DEMO MODE':'CONNECTED');
+    document.getElementById('status_dot').classList.remove('dead');
+    document.getElementById('status_dot').classList.add('live');
+    startAuto();
+    log('Connected — logging started');
+  }catch(e){log('ERROR: '+e.message)}
+}
+async function refresh(){
+  try{update(backend?await api('/api/read'):simulate())}catch(e){log('ERROR: '+e.message)}
+}
+
+function setStatus(state,text){
+  const el=document.getElementById('connect_state');
+  el.className='status-badge '+(state==='live'?'live':state==='demo'?'demo-mode':'dead');
+  el.textContent=text;
+}
+
+// ── Apply ──
+function inputBody(){
+  return{cold_input:document.getElementById('cold_input').value,sample_input:document.getElementById('sample_input').value,control_input:document.getElementById('control_input').value};
+}
+async function applyInputs(){
+  const body=inputBody();
+  try{update(backend?await api('/api/inputs',body):demoInputs(body));log('Channel mapping updated')}catch(e){log('ERROR: '+e.message)}
+}
+async function applyControl(){
+  const body={...inputBody(),target:number('target'),ramp:document.getElementById('enable_ramp').checked?number('ramp'):0,range:Number(document.getElementById('range').value)};
+  try{const result=backend?await api('/api/control',body):demoControl(body);update(result);log('Settings applied — Setpoint: '+body.target+' K  Range: '+rangeNames[body.range])}catch(e){log('ERROR: '+e.message)}
+}
+function turnOff(){
+  document.getElementById('range').value='0';
+  document.getElementById('enable_ramp').checked=false;
+  applyControl();
+}
+
+// ── Demo Simulation ──
 function demoInputs(b){demo.coldInput=b.cold_input;demo.sampleInput=b.sample_input;demo.controlInput=b.control_input||b.sample_input;return simulate()}
-function demoControl(b){demoInputs(b);demo.setpoint=b.target;demo.ramp=b.ramp;demo.range=b.range;return simulate()}function simulate(){const now=performance.now(),dt=Math.min(10,(now-demo.last)/1000);demo.last=now;const r=Math.max(demo.ramp,.1)/60;for(const ch of ['A','B']){const lag=ch===demo.controlInput?1:.65,delta=demo.setpoint-demo.inputs[ch],max=r*dt*lag;demo.inputs[ch]+=Math.max(-max,Math.min(max,delta))}const controlTemp=demo.inputs[demo.controlInput]??demo.inputs.B;const heater=demo.range===0?0:Math.min(100,Math.max(0,demo.setpoint-controlTemp)*8+demo.range*8);return{idn:'DEMO,Lake Shore 336,ARPES,1.0',cold_head:demo.inputs[demo.coldInput].toFixed(3),sample:demo.inputs[demo.sampleInput].toFixed(3),input_a:demo.inputs.A.toFixed(3),input_b:demo.inputs.B.toFixed(3),input_c:demo.inputs.C.toFixed(3),input_d:demo.inputs.D.toFixed(3),cold_input:demo.coldInput,sample_input:demo.sampleInput,control_input:demo.controlInput,setpoint:demo.setpoint.toFixed(3),ramp_rate:demo.ramp.toFixed(3),heater_range:rangeNames[demo.range],heater_range_raw:String(demo.range),pid_p:String(demo.pid[0]),pid_i:String(demo.pid[1]),pid_d:String(demo.pid[2]),heater:heater.toFixed(1),comm:'Demo',updated:new Date().toLocaleTimeString()}}
+function demoControl(b){demoInputs(b);demo.setpoint=b.target;demo.ramp=b.ramp;demo.range=b.range;return simulate()}
+function simulate(){
+  const now=performance.now(),dt=Math.min(10,(now-demo.last)/1000);demo.last=now;
+  const r=Math.max(demo.ramp,.1)/60;
+  for(const ch of ['A','B']){
+    const lag=ch===demo.controlInput?1:.65,delta=demo.setpoint-demo.inputs[ch],maxDelta=r*dt*lag;
+    demo.inputs[ch]+=Math.max(-maxDelta,Math.min(maxDelta,delta));
+  }
+  const controlTemp=demo.inputs[demo.controlInput]??demo.inputs.B;
+  const heater=demo.range===0?0:Math.min(100,Math.max(0,demo.setpoint-controlTemp)*8+demo.range*8);
+  return{idn:'DEMO,Lake Shore 336,ARPES,1.0',cold_head:demo.inputs[demo.coldInput].toFixed(3),sample:demo.inputs[demo.sampleInput].toFixed(3),input_a:demo.inputs.A.toFixed(3),input_b:demo.inputs.B.toFixed(3),input_c:demo.inputs.C.toFixed(3),input_d:demo.inputs.D.toFixed(3),cold_input:demo.coldInput,sample_input:demo.sampleInput,control_input:demo.controlInput,setpoint:demo.setpoint.toFixed(3),ramp_enable:demo.ramp>0?'On':'Off',ramp_rate:demo.ramp.toFixed(3),heater_range:rangeNames[demo.range],heater_range_raw:String(demo.range),pid_p:String(demo.pid[0]),pid_i:String(demo.pid[1]),pid_d:String(demo.pid[2]),heater:heater.toFixed(1),comm:'Demo',updated:new Date().toLocaleTimeString()};
+}
+
+// ── Update Display ──
 function setIfNotEditing(id,value){const el=document.getElementById(id);if(el&&!editingInputs.has(id))el.value=value}
-function update(d){lastData={...lastData,...d};['cold_head','sample','setpoint','ramp_rate','heater','heater_range','input_a','input_b','input_c','input_d'].forEach(k=>{const el=document.getElementById(k);if(el)el.textContent=d[k]??lastData[k]??'--'});if(d.cold_input){setIfNotEditing('cold_input',d.cold_input);document.getElementById('cold_input_badge').textContent=d.cold_input}if(d.sample_input){setIfNotEditing('sample_input',d.sample_input);document.getElementById('sample_input_badge').textContent=d.sample_input}if(d.control_input)setIfNotEditing('control_input',d.control_input);if(d.heater_range_raw&&(!window._rangeLock||Date.now()>window._rangeLock))setIfNotEditing('range',d.heater_range_raw);document.getElementById('pid_p_rb').textContent=d.pid_p??lastData.pid_p??'--';document.getElementById('pid_i_rb').textContent=d.pid_i??lastData.pid_i??'--';document.getElementById('pid_d_rb').textContent=d.pid_d??lastData.pid_d??'--';history.push({t:new Date(),cold:Number(lastData.cold_head),sample:Number(lastData.sample)});history=history.slice(-80);drawChart();updateStable();updateWarnings();if(logEnabled)appendLog()}
-function updateStable(){const stable=Math.abs(Number(lastData.sample)-Number(lastData.setpoint))<=number('stable_tol');document.getElementById('stable_state').textContent=lastData.sample?(stable?t('stable'):t('notStable')):'--';document.getElementById('stable_state').className=stable?'ok':'bad'}
-function updateWarnings(){const items=[];const target=number('target'),ramp=number('ramp'),heater=Number(lastData.heater),cold=Number(lastData.cold_head),sample=Number(lastData.sample),inputA=Number(lastData.input_a),inputB=Number(lastData.input_b),controlInput=document.getElementById('control_input').value;
-// Safety limits
-if(target>350)items.push({msg:t('wSetpointLimit'),reason:t('wSetpointLimitReason'),level:'danger'});
-if(ramp>10)items.push({msg:t('wRampLimit'),reason:t('wRampLimitReason'),level:'caution'});
-if(heater>85)items.push({msg:t('wHeaterHigh')+': '+heater.toFixed(1)+'%',reason:t('wHeaterHighReason'),level:heater>95?'danger':'caution'});
-// Sensor / input config checks
-if(sample===0&&lastData.sample_input&&lastData.comm)items.push({msg:t('wSensorZero').replace('{ch}',lastData.sample_input),reason:t('wSensorZeroReason'),level:'danger'});
-const ciMap={A:inputA,B:inputB,C:Number(lastData.input_c),D:Number(lastData.input_d)},ciTemp=ciMap[controlInput];if(ciTemp===0&&lastData.comm)items.push({msg:t('wControlZero').replace('{ch}',controlInput),reason:t('wControlZeroReason'),level:'danger'})
-if(lastData.comm&&Number.isFinite(sample)&&sample>0&&target>sample+10)items.push({msg:t('wSetpointFar').replace('{diff}',(target-sample).toFixed(0)),reason:t('wSetpointFarReason'),level:'caution'});
-// Render
-const header=document.getElementById('warning_header'),icon=document.getElementById('warning_icon'),title=document.getElementById('warning_title'),list=document.getElementById('warning_list');
-if(!items.length){header.className='warning-header safe';icon.innerHTML='&#9678;';title.textContent=t('noWarnings');list.style.display='none';return}
-const hasDanger=items.some(i=>i.level==='danger');header.className=hasDanger?'warning-header danger':'warning-header caution';icon.innerHTML=hasDanger?'&#9888;':'&#9881;';title.textContent=items.length+' '+t('warningsFound');
-list.style.display='';list.innerHTML=items.map(i=>'<li><div style="flex:1"><div>'+i.msg+'</div><div class="reason">'+i.reason+'</div></div><span class="warning-level '+i.level+'">'+(i.level==='danger'?t('wDanger'):t('wCaution'))+'</span></li>').join('')}
-function drawChart(){const c=document.getElementById('chart'),x=c.getContext('2d'),w=c.width,h=c.height,p={l:58,r:18,t:22,b:38};x.clearRect(0,0,w,h);x.font='13px Arial';x.textBaseline='middle';x.lineWidth=1;const vals=history.flatMap(v=>[v.cold,v.sample]).filter(Number.isFinite);if(!vals.length){x.fillStyle='#b8cbd2';x.fillText('Connect DEMO or instrument to start plotting',p.l,p.t+20);return}let min=Math.min(...vals),max=Math.max(...vals);const span=Math.max(2,max-min),pad=Math.max(1,span*.25);min=Math.floor(min-pad);max=Math.ceil(max+pad);function sx(i){return p.l+i*((w-p.l-p.r)/Math.max(1,history.length-1))}function sy(v){return h-p.b-(v-min)*((h-p.t-p.b)/(max-min))}x.strokeStyle='rgba(207,233,239,.24)';x.fillStyle='#b8cbd2';for(let i=0;i<=4;i++){const v=min+(max-min)*(i/4),y=sy(v);x.beginPath();x.moveTo(p.l,y);x.lineTo(w-p.r,y);x.stroke();x.fillText(v.toFixed(1)+' K',8,y)}x.strokeStyle='rgba(207,233,239,.55)';x.beginPath();x.moveTo(p.l,p.t);x.lineTo(p.l,h-p.b);x.lineTo(w-p.r,h-p.b);x.stroke();x.fillStyle='#cfe9ef';x.fillText('Temp (K)',p.l,p.t-8);const start=history[0].t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),end=history[history.length-1].t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});x.fillText(start,p.l,h-16);x.textAlign='right';x.fillText(end,w-p.r,h-16);x.textAlign='left';function line(key,color,labelOffset){x.strokeStyle=color;x.lineWidth=4;x.lineJoin='round';x.lineCap='round';x.beginPath();history.forEach((point,i)=>{const xx=sx(i),yy=sy(point[key]);if(i)x.lineTo(xx,yy);else x.moveTo(xx,yy)});x.stroke();const last=history[history.length-1],lx=sx(history.length-1),ly=sy(last[key]);x.fillStyle=color;x.beginPath();x.arc(lx,ly,5,0,Math.PI*2);x.fill();x.font='bold 13px Arial';x.fillText(last[key].toFixed(2)+' K',Math.max(p.l,lx-88),Math.max(p.t+10,ly+labelOffset))}line('cold','#26e6ff',-14);line('sample','#ff8fb1',18)}
-function startAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}function startLog(){logEnabled=!logEnabled;log(logEnabled?'LOG START':'LOG STOP')}function appendLog(){logRows.push([new Date().toISOString(),lastData.cold_input,lastData.sample_input,lastData.control_input,lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d])}function downloadCsv(){const head=['timestamp','cold_input','sample_input','control_input','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_K_min','heater_range','heater_percent','pid_p','pid_i','pid_d'];const csv=[head,...logRows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_arpes_log.csv';a.click();URL.revokeObjectURL(a.href)}
-const QUICK_BLUR=['target','ramp','range','step','interval','stable_tol','cold_input','sample_input','control_input'];
-[...QUICK_BLUR].forEach(id=>{
-  const el=document.getElementById(id);
-  if(!el)return;
+function update(d){
+  lastData={...lastData,...d};
+  ['cold_head','sample','setpoint','ramp_rate','heater','heater_range','input_a','input_b','input_c','input_d'].forEach(k=>{const el=document.getElementById(k);if(el)el.textContent=d[k]??lastData[k]??'--'});
+  if(d.cold_input){setIfNotEditing('cold_input',d.cold_input);document.getElementById('cold_input_badge').textContent=d.cold_input}
+  if(d.sample_input){setIfNotEditing('sample_input',d.sample_input);document.getElementById('sample_input_badge').textContent=d.sample_input}
+  if(d.control_input)setIfNotEditing('control_input',d.control_input);
+  if(d.heater_range_raw)setIfNotEditing('range',d.heater_range_raw);
+  if(d.setpoint!=null)setIfNotEditing('target',d.setpoint);
+  if(d.ramp_rate!=null)setIfNotEditing('ramp',d.ramp_rate);
+  if(d.ramp_enable!=null)document.getElementById('enable_ramp').checked=(d.ramp_enable==='On'||d.ramp_enable===true);
+  document.getElementById('pid_p_rb').textContent=d.pid_p??lastData.pid_p??'--';
+  document.getElementById('pid_i_rb').textContent=d.pid_i??lastData.pid_i??'--';
+  document.getElementById('pid_d_rb').textContent=d.pid_d??lastData.pid_d??'--';
+  history.push({t:new Date(),cold:Number(lastData.cold_head),sample:Number(lastData.sample)});
+  history=history.slice(-80);
+  drawChart();
+  updateStable();
+  updateWarnings();
+  if(d.log_status)updateLogStatus(d.log_status);
+  if(logEnabled&&!backend){appendLocalLog();updateLogStatus({active:true,filename:'demo temporary CSV',rows:logRows.length,last_write_iso:new Date().toISOString()})}
+}
+
+// ── Stability ──
+function updateStable(){
+  const stable=Math.abs(Number(lastData.sample)-Number(lastData.setpoint))<=0.2;
+  const el=document.getElementById('stable_state');
+  el.textContent=lastData.sample?(stable?'Stable':'Not Stable'):'--';
+  el.className='stable-indicator '+(stable?'ok':'bad');
+}
+
+// ── Warnings ──
+function updateWarnings(){
+  const items=[];
+  const target=Number(lastData.setpoint),ramp=Number(lastData.ramp_rate),heater=Number(lastData.heater),sample=Number(lastData.sample);
+  const controlInput=lastData.control_input||document.getElementById('control_input').value;
+  if(target>350)items.push('Setpoint exceeds 350 K safety limit');
+  if(ramp>10)items.push('Ramp rate exceeds 10 K/min safety limit');
+  if(heater>85)items.push('Heater output high: '+heater.toFixed(1)+'%');
+  if(sample===0&&lastData.sample_input&&lastData.comm)items.push('Sensor channel '+lastData.sample_input+' reads 0 K');
+  const ciTemp=Number(lastData['input_'+controlInput.toLowerCase()]);
+  if(ciTemp===0&&lastData.comm)items.push('Control input channel '+controlInput+' reads 0 K');
+  if(lastData.comm&&Number.isFinite(sample)&&sample>0&&target>sample+10)items.push('Setpoint is '+(target-sample).toFixed(0)+' K above current sample temperature');
+  const header=document.getElementById('warning_header'),title=document.getElementById('warning_title'),list=document.getElementById('warning_list');
+  const iconOk=document.getElementById('warn_icon_ok'),iconAlert=document.getElementById('warn_icon_alert');
+  if(!items.length){
+    header.className='warn-header clear';
+    iconOk.style.display='';iconAlert.style.display='none';
+    title.textContent='All Systems Nominal';
+    list.style.display='none';
+    return;
+  }
+  const critical=items.some(i=>i.includes('350 K')||i.includes('10 K/min')||i.includes('reads 0 K'));
+  header.className=critical?'warn-header critical':'warn-header warnings';
+  iconOk.style.display='none';iconAlert.style.display='';
+  title.textContent=items.length+' Warning'+(items.length>1?'s':'');
+  list.style.display='';
+  list.innerHTML=items.map(i=>'<li>'+i+'</li>').join('');
+}
+
+// ── Chart ──
+function drawChart(){
+  const c=document.getElementById('chart'),x=c.getContext('2d'),w=c.width,h=c.height,p={l:56,r:14,t:20,b:36};
+  x.clearRect(0,0,w,h);
+  const vals=history.flatMap(v=>[v.cold,v.sample]).filter(Number.isFinite);
+  if(!vals.length){
+    x.fillStyle='#5c7085';x.font='13px -apple-system,sans-serif';
+    x.fillText('Connect or select DEMO to plot temperature trend',p.l+6,p.t+22);
+    return;
+  }
+  let min=Math.min(...vals),max=Math.max(...vals);
+  const span=Math.max(2,max-min),pad=Math.max(1,span*.25);
+  min=Math.floor(min-pad);max=Math.ceil(max+pad);
+  function sx(i){return p.l+i*((w-p.l-p.r)/Math.max(1,history.length-1))}
+  function sy(v){return h-p.b-(v-min)*((h-p.t-p.b)/(max-min))}
+
+  // Grid
+  x.strokeStyle='rgba(138,163,184,.10)';x.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const v=min+(max-min)*(i/4),y=sy(v);
+    x.beginPath();x.moveTo(p.l,y);x.lineTo(w-p.r,y);x.stroke();
+  }
+  // Y labels
+  x.fillStyle='#5c7085';x.font='11px -apple-system,sans-serif';x.textAlign='right';
+  for(let i=0;i<=4;i++){
+    const v=min+(max-min)*(i/4),y=sy(v);
+    x.fillText(v.toFixed(1)+' K',p.l-8,y+4);
+  }
+  x.textAlign='start';
+
+  // Lines
+  function line(key,color){
+    x.strokeStyle=color;x.lineWidth=2.5;x.lineCap='round';x.lineJoin='round';
+    x.beginPath();
+    history.forEach((point,i)=>{
+      const xx=sx(i),yy=sy(point[key]);
+      if(i)x.lineTo(xx,yy);else x.moveTo(xx,yy);
+    });
+    x.stroke();
+    // Glow
+    x.strokeStyle=color.replace('rgb(','rgba(').replace(')',',0.15)');x.lineWidth=7;
+    x.beginPath();
+    history.forEach((point,i)=>{const xx=sx(i),yy=sy(point[key]);if(i)x.lineTo(xx,yy);else x.moveTo(xx,yy)});
+    x.stroke();
+  }
+  line('cold','rgb(34,211,238)');
+  line('sample','rgb(244,114,182)');
+}
+
+// ── Autopoll ──
+function startAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}
+
+// ── Logging ──
+async function refreshLogStatus(){try{if(backend)updateLogStatus(await api('/api/log/status'))}catch(e){log('LOG ERROR: '+e.message)}}
+function updateLogStatus(s){
+  logStatus=s||{};
+  const st=document.getElementById('recording_state');
+  const label=s.active?'ON':'PAUSED';st.textContent=label;
+  st.className='log-value '+(s.error?'paused':(s.active?'on':'paused'));
+  document.getElementById('log_file').textContent=s.filename||'--';
+  document.getElementById('log_rows').textContent=String(s.rows??0);
+  document.getElementById('last_write').textContent=s.last_write_iso||'--';
+  if(s.error)log('LOG ERROR: '+s.error);
+}
+function appendLocalLog(){
+  logRows.push([new Date().toISOString(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
+}
+function downloadCsv(){
+  if(backend){window.location='/api/log/download';return}
+  const head=['timestamp_iso','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_range','heater_percent','pid_p','pid_i','pid_d','comm','stable_state'];
+  const csv=[head,...logRows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_static_demo_temporary_log.csv';a.click();URL.revokeObjectURL(a.href);
+}
+function openMaintenance(){if(!backend){log('Maintenance page requires a connected backend');return}window.open('/maintenance','_blank')}
+
+// ── Editing Protection ──
+['target','ramp','range','cold_input','sample_input','control_input'].forEach(id=>{
+  const el=document.getElementById(id);if(!el)return;
   el.addEventListener('focus',()=>editingInputs.add(id));
   el.addEventListener('input',()=>editingInputs.add(id));
   el.addEventListener('change',()=>editingInputs.add(id));
   el.addEventListener('blur',()=>setTimeout(()=>editingInputs.delete(id),3000));
 });
-loadPorts();setLanguage('en');
+
+// ── Init ──
+loadPorts();
 </script>
 </body>
 </html>

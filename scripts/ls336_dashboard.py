@@ -128,32 +128,10 @@ class LakeShoreDashboard(tk.Tk):
         self.ramp_rate_entry = self._entry_row(
             controls, 1, "Ramp K/min", "1", self._apply_ramp
         )
-        self.warmup_target_entry = self._entry_row(
-            controls, 2, "Warmup Target K", "300", self._apply_warmup_target
-        )
-
-        step_row = ttk.Frame(controls)
-        step_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        action_row = ttk.Frame(controls)
+        action_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         ttk.Button(
-            step_row,
-            text="Use 5 K Step",
-            command=lambda: self._run_action("Set 5 K step", self.client.proc, "Loop1:WARMUP:STEP:5K"),
-            style="Action.TButton",
-        ).pack(side="left", padx=(0, 8))
-        ttk.Button(
-            step_row,
-            text="Use 10 K Step",
-            command=lambda: self._run_action("Set 10 K step", self.client.proc, "Loop1:WARMUP:STEP:10K"),
-            style="Action.TButton",
-        ).pack(side="left", padx=8)
-        ttk.Button(
-            step_row,
-            text="Advance One Step",
-            command=lambda: self._run_action("Advance warmup", self.client.proc, "Loop1:WARMUP:NEXT"),
-            style="Action.TButton",
-        ).pack(side="left", padx=8)
-        ttk.Button(
-            step_row,
+            action_row,
             text="Refresh",
             command=self.refresh_now,
         ).pack(side="right")
@@ -201,7 +179,7 @@ class LakeShoreDashboard(tk.Tk):
         self._apply_number("Setpoint", self.setpoint_entry, "Loop1:SETP", 0, 350)
 
     def _apply_ramp(self) -> None:
-        value = self._number_from_entry("Ramp rate", self.ramp_rate_entry, 0, 5)
+        value = self._number_from_entry("Ramp rate", self.ramp_rate_entry, 0, 10)
         if value is None:
             return
 
@@ -210,11 +188,6 @@ class LakeShoreDashboard(tk.Tk):
             return self.client.caput("Loop1:RAMP:RATE", value)
 
         self._run_action("Apply ramp", write_ramp)
-
-    def _apply_warmup_target(self) -> None:
-        self._apply_number(
-            "Warmup target", self.warmup_target_entry, "Loop1:WARMUP:TARGET", 0, 350
-        )
 
     def _apply_number(
         self,

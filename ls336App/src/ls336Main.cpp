@@ -16,9 +16,9 @@ int main(int argc, char *argv[])
         epicsThreadSleep(.2);
     } else {
         ls336_registerRecordDeviceDriver(pdbbase);
-        iocsh(0);
     }
 
+    iocsh(0);
     epicsExit(0);
     return 0;
 }
