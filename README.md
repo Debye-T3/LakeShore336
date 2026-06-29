@@ -96,6 +96,18 @@ There are two supported sharing modes:
 
 The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID readback values, safety warnings, and temporary browser CSV downloads.
 
+## Build an offline Windows package
+
+On a connected 64-bit Windows 10/11 build computer, run:
+
+```bat
+scripts\build_package.bat
+```
+
+The script installs/checks build dependencies, creates the PyInstaller application, runs an automated packaged DEMO control and Beijing-time logging smoke test, and writes `dist\LakeShore336_portable.zip`. Copy that ZIP to the offline Windows computer, extract it, and run `START.bat`. The target computer does not need Python, WSL, or internet access. Existing experiment files under the source `logs/` directory are never included in the package.
+
+See `docs/offline_package_zh.md` for the Chinese deployment and second hardware-test procedure.
+
 Vercel workflow:
 
 1. Push this repository to GitHub.

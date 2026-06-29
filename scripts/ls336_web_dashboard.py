@@ -362,6 +362,7 @@ class LogArchive:
         self.current_port = ""
         self.current_mode = ""
         self.last_write_iso = ""
+        self.last_write_local = ""
         self.error = ""
 
     def start_session(self, selected_port: str, mode: str) -> dict[str, object]:
@@ -438,6 +439,7 @@ class LogArchive:
                     csv.DictWriter(handle, fieldnames=CSV_FIELDS).writerow(row)
                 self.rows += 1
                 self.last_write_iso = row["timestamp_iso"]
+                self.last_write_local = row["timestamp_local"]
                 self.error = ""
             except OSError as exc:
                 self.error = str(exc)
@@ -455,6 +457,7 @@ class LogArchive:
             "log_dir": str(self.log_dir),
             "filename": self.csv_path.name if self.csv_path else "",
             "last_write_iso": self.last_write_iso,
+            "last_write_local": self.last_write_local,
             "error": self.error,
         }
 

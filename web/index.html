@@ -411,6 +411,10 @@ let demo={inputs:{A:82.4,B:84.1,C:296,D:296},coldInput:'A',sampleInput:'B',contr
 const rangeNames=['Off','Low','Medium','High'];
 
 function number(id){const el=document.getElementById(id);return el?Number(el.value):NaN}
+function beijingIsoTime(date=new Date()){
+  const shifted=new Date(date.getTime()+8*60*60*1000);
+  return shifted.toISOString().slice(0,19)+'+08:00';
+}
 
 // ── Connection & Ports ──
 async function api(path,body){
@@ -510,7 +514,7 @@ function update(d){
   updateStable();
   updateWarnings();
   if(d.log_status)updateLogStatus(d.log_status);
-  if(logEnabled&&!backend){appendLocalLog();updateLogStatus({active:true,filename:'demo temporary CSV',rows:logRows.length,last_write_iso:new Date().toISOString()})}
+  if(logEnabled&&!backend){appendLocalLog();updateLogStatus({active:true,filename:'demo temporary CSV',rows:logRows.length,last_write_iso:new Date().toISOString(),last_write_local:beijingIsoTime()})}
 }
 
 // ── Stability ──
@@ -611,15 +615,15 @@ function updateLogStatus(s){
   st.className='log-value '+(s.error?'paused':(s.active?'on':'paused'));
   document.getElementById('log_file').textContent=s.filename||'--';
   document.getElementById('log_rows').textContent=String(s.rows??0);
-  document.getElementById('last_write').textContent=s.last_write_iso||'--';
+  document.getElementById('last_write').textContent=s.last_write_local||s.last_write_iso||'--';
   if(s.error)log('LOG ERROR: '+s.error);
 }
 function appendLocalLog(){
-  logRows.push([new Date().toISOString(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
+  logRows.push([new Date().toISOString(),beijingIsoTime(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
 }
 function downloadCsv(){
   if(backend){window.location='/api/log/download';return}
-  const head=['timestamp_iso','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_range','heater_percent','pid_p','pid_i','pid_d','comm','stable_state'];
+  const head=['timestamp_iso','timestamp_local','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_range','heater_percent','pid_p','pid_i','pid_d','comm','stable_state'];
   const csv=[head,...logRows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_static_demo_temporary_log.csv';a.click();URL.revokeObjectURL(a.href);
 }
