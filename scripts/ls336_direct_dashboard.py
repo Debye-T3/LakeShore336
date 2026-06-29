@@ -170,8 +170,6 @@ class DirectDashboard(tk.Tk):
         self.cold_input = tk.StringVar(value="A")
         self.sample_input = tk.StringVar(value="B")
         self.control_input = tk.StringVar(value="B")
-        self.warmup_step = tk.DoubleVar(value=5.0)
-        self.warmup_active = False
         self.refresh_after_id: str | None = None
 
         self.title("Lake Shore 336 Direct Dashboard")
@@ -272,54 +270,9 @@ class DirectDashboard(tk.Tk):
             controls, 1, "Setpoint K", "300", self.apply_setpoint
         )
         self.ramp_entry = self._entry_row(controls, 2, "Ramp K/min", "1", self.apply_ramp)
-        self.target_entry = self._entry_row(
-            controls, 3, "Warmup Target K", "300", self.apply_warmup_target
-        )
-
-        step_row = ttk.Frame(controls)
-        step_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        ttk.Button(
-            step_row,
-            text="Use 5 K Step",
-            command=lambda: self._set_warmup_step(5.0),
-            style="Action.TButton",
-        ).pack(side="left", padx=(0, 8))
-        ttk.Button(
-            step_row,
-            text="Use 10 K Step",
-            command=lambda: self._set_warmup_step(10.0),
-            style="Action.TButton",
-        ).pack(side="left", padx=8)
-        ttk.Button(
-            step_row,
-            text="Advance One Step",
-            command=self.advance_warmup,
-            style="Action.TButton",
-        ).pack(side="left", padx=8)
-        ttk.Label(step_row, text="Step K").pack(side="left", padx=(18, 4))
-        self.step_entry = ttk.Entry(step_row, width=8)
-        self.step_entry.insert(0, "5")
-        self.step_entry.pack(side="left")
-        ttk.Button(step_row, text="Refresh", command=self.refresh_now).pack(side="right")
-
-        rhythm_row = ttk.Frame(controls)
-        rhythm_row.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        ttk.Label(rhythm_row, text="Rhythm interval min").pack(side="left")
-        self.interval_entry = ttk.Entry(rhythm_row, width=8)
-        self.interval_entry.insert(0, "5")
-        self.interval_entry.pack(side="left", padx=(8, 16))
-        ttk.Button(
-            rhythm_row,
-            text="Start Rhythm Warmup",
-            command=self.start_rhythm_warmup,
-            style="Action.TButton",
-        ).pack(side="left", padx=(0, 8))
-        ttk.Button(
-            rhythm_row,
-            text="Stop",
-            command=self.stop_rhythm_warmup,
-            style="Action.TButton",
-        ).pack(side="left")
+        action_row = ttk.Frame(controls)
+        action_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        ttk.Button(action_row, text="Refresh", command=self.refresh_now).pack(side="right")
 
         info = ttk.LabelFrame(root, text="Instrument", padding=12)
         info.pack(fill="both", expand=True, pady=8)
@@ -383,45 +336,6 @@ class DirectDashboard(tk.Tk):
         if value is not None:
             self._run_action("Ramp", self._require_client().set_ramp, value, 1)
 
-    def apply_warmup_target(self) -> None:
-        value = self._entry_number("Warmup target", self.target_entry, 0, 350)
-        if value is not None:
-            self.status.set(f"Warmup target set to {value:g} K")
-
-    def advance_warmup(self) -> None:
-        target = self._entry_number("Warmup target", self.target_entry, 0, 350)
-        if target is None:
-            return
-        step = self._warmup_step_value()
-        if step is None:
-            return
-        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
-        if ramp_rate is None:
-            return
-        self._run_action("Advance warmup", self._advance_warmup_worker, target, step, ramp_rate)
-
-    def start_rhythm_warmup(self) -> None:
-        if self.warmup_active:
-            self.status.set("Rhythm warmup is already running")
-            return
-
-        target = self._entry_number("Warmup target", self.target_entry, 0, 350)
-        step = self._warmup_step_value()
-        ramp_rate = self._entry_number("Ramp rate", self.ramp_entry, 0, 10)
-        interval = self._entry_number("Rhythm interval", self.interval_entry, 0.1, 240)
-        if target is None or step is None or ramp_rate is None or interval is None:
-            return
-
-        self.warmup_active = True
-        self.status.set(
-            f"Rhythm warmup running: {step:g} K every {interval:g} min toward {target:g} K"
-        )
-        self._rhythm_warmup_tick(target, step, ramp_rate, interval)
-
-    def stop_rhythm_warmup(self) -> None:
-        self.warmup_active = False
-        self.status.set("Rhythm warmup stopped")
-
     def _set_ramped_setpoint_worker(self, target: float, ramp_rate: float) -> dict[str, str]:
         client = self._require_client()
         self._configure_inputs(client)
@@ -443,41 +357,6 @@ class DirectDashboard(tk.Tk):
             self.sample_input.get(),
             self.control_input.get(),
         )
-
-    def _advance_warmup_worker(self, target: float, step: float, ramp_rate: float) -> dict[str, str]:
-        client = self._require_client()
-        self._configure_inputs(client)
-        if ramp_rate > 0:
-            client.set_ramp(ramp_rate, 1)
-        current = float(client.query("SETP? 1"))
-        next_setpoint = min(current + step, target) if target > current else current
-        client.set_setpoint(next_setpoint)
-        time.sleep(0.2)
-        values = client.read_all()
-        values["_warmup_done"] = "1" if next_setpoint >= target else "0"
-        values["_warmup_next"] = f"{next_setpoint:.3f}"
-        return values
-
-    def _rhythm_warmup_tick(
-        self, target: float, step: float, ramp_rate: float, interval_min: float
-    ) -> None:
-        if not self.warmup_active:
-            return
-
-        self._run_action("Rhythm warmup step", self._advance_warmup_worker, target, step, ramp_rate)
-        interval_ms = max(1000, int(interval_min * 60 * 1000))
-        self.after(interval_ms, self._rhythm_warmup_tick, target, step, ramp_rate, interval_min)
-
-    def _set_warmup_step(self, value: float) -> None:
-        self.warmup_step.set(value)
-        self.step_entry.delete(0, tk.END)
-        self.step_entry.insert(0, f"{value:g}")
-
-    def _warmup_step_value(self) -> float | None:
-        value = self._entry_number("Warmup step", self.step_entry, 0.1, 50)
-        if value is not None:
-            self.warmup_step.set(value)
-        return value
 
     def _entry_number(self, label: str, entry: ttk.Entry, low: float, high: float) -> float | None:
         try:
@@ -524,11 +403,7 @@ class DirectDashboard(tk.Tk):
                 for key, value in result.items():
                     if key in self.values:
                         self.values[key].set(value or "--")
-                if result.get("_warmup_done") == "1" and self.warmup_active:
-                    self.warmup_active = False
-                    self.status.set(f"Warmup target reached at {result.get('_warmup_next')} K")
-                else:
-                    self.status.set(f"Updated {time.strftime('%H:%M:%S')}")
+                self.status.set(f"Updated {time.strftime('%H:%M:%S')}")
                 self._schedule_refresh()
             else:
                 self.status.set(f"{label} complete")

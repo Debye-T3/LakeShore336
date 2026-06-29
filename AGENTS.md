@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is an EPICS IOC for a Lake Shore 336 temperature controller. Core IOC files live under `ls336App/`: `Db/ls336.db` defines public PV records and safety limits, `protocol/ls336.proto` defines StreamDevice serial commands, and `src/` builds the `ls336` IOC binary. Startup configuration is in `iocBoot/iocLS336/st.cmd`. EPICS build configuration is under `configure/`, with site overrides expected in untracked `configure/RELEASE.local`. Utility scripts are in `scripts/`, and Python layout/regression tests are in `tests/`.
+This repository is an EPICS IOC for a Lake Shore 336 temperature controller. Core IOC files live under `ls336App/`: `Db/ls336.db` defines public PV records and safety limits, `protocol/ls336.proto` defines StreamDevice serial commands, and `src/` builds the `ls336` IOC binary. Startup configuration is in `iocBoot/iocLS336/st.cmd`. EPICS build configuration is under `configure/`, with site overrides expected in untracked `configure/RELEASE.local`. Utility scripts are in `scripts/`, Python layout/regression tests are in `tests/`, and local dashboard archive output is written under untracked `logs/`.
 
 ## Build, Test, and Development Commands
 
@@ -26,7 +26,7 @@ Use concise Conventional Commit-style messages such as `docs: update IOC setup n
 
 ## Security & Configuration Tips
 
-Do not commit machine-specific `configure/RELEASE.local` paths, WSL build output directories, IOC boot histories, or downloaded dependency archives. Treat setpoint and ramp-rate limit changes as safety-sensitive; document the commissioning rationale and test the validation records before use on hardware.
+Do not commit machine-specific `configure/RELEASE.local` paths, WSL build output directories, IOC boot histories, downloaded dependency archives, or local experiment logs under `logs/`. Treat setpoint and ramp-rate limit changes as safety-sensitive; document the commissioning rationale and test the validation records before use on hardware.
 
 ## WSL/EPICS Notes
 

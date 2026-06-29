@@ -1,6 +1,6 @@
 # Lake Shore 336 EPICS IOC
 
-This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes readback PVs for the cold head and sample temperatures, plus conservative Loop 1 setpoint, ramp, and stepwise warmup controls for higher-level clients and a small visual dashboard.
+This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes readback PVs for the cold head and sample temperatures, plus conservative Loop 1 setpoint and ramp controls for higher-level clients and local dashboards.
 
 For an operator-facing Chinese tutorial, see [`docs/operator_tutorial_zh.md`](docs/operator_tutorial_zh.md).
 
@@ -42,15 +42,7 @@ python scripts\ls336_direct_dashboard.py
 
 In the dashboard, choose the Lake Shore COM port and click `Connect`. The panel reads the instrument directly and shows cold-head temperature, sample temperature, setpoint readback, ramp state, ramp rate, heater output, and communication status.
 
-For controlled warmup:
-
-1. Set `Ramp K/min` to a conservative value, for example `0.5` or `1`.
-2. Set `Warmup Target K`.
-3. Choose `Use 5 K Step`, `Use 10 K Step`, or type a custom `Step K`.
-4. For one manual move, click `Advance One Step`.
-5. For a steady rhythm, set `Rhythm interval min` and click `Start Rhythm Warmup`; click `Stop` when you want to hold.
-
-The dashboard writes the Lake Shore ramp command before changing setpoints, so the controller handles the smooth K/min climb while the dashboard controls the larger step size and interval. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
+For controlled temperature changes, set `Ramp K/min` to a conservative value, set the target setpoint, then click `Apply`. The dashboard writes the Lake Shore ramp command before changing setpoints, so the controller handles the smooth K/min climb. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
 
 Command-line example:
 
@@ -58,13 +50,19 @@ Command-line example:
 python scripts\ls336_direct_dashboard.py --port COM3
 ```
 
-For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID readback, rhythm warmup, CSV logging, safety warnings, and English/Chinese labels, run:
+For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID readback, server-side CSV archiving, safety warnings, and English/Chinese labels, run:
 
 ```powershell
 python scripts\ls336_web_dashboard.py
 ```
 
-Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES warmup: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID readback values, and stepwise rhythm warmup. `Apply` writes the Lake Shore `CSET`, `RANGE`, `RAMP`, and `SETP` commands in one controlled update; it does not write PID values. Adjust PID on the instrument itself when commissioning or tuning, then use the dashboard to read back the active PID values.
+Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES operation: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID readback values, and archived temperature logging. `Apply` writes the Lake Shore `CSET`, `RANGE`, `RAMP`, and `SETP` commands in one controlled update. Ordinary users can read PID values, but PID writes are only available in the maintenance page.
+
+After `CONNECT` succeeds, the local Python service starts recording automatically. The ordinary operator page only shows recording status, current CSV filename, row count, and last write time, so experiment users do not need to remember to start logging and cannot accidentally stop it. Click `DOWNLOAD CSV` to retrieve the current archive file. The CSV is written by the local Python service, so it survives browser refreshes and is ready for experiment archiving. The static web demo can still download a temporary browser-only CSV, but only the local Python dashboard creates archived files.
+
+Archive files use the Beijing-time daily pattern `ls336_temperature_YYYYMMDD.csv` and `ls336_temperature_YYYYMMDD.meta.json`. If maintenance explicitly creates a new file during the same Beijing-time day, the file gets a manual suffix such as `ls336_temperature_YYYYMMDD_manual_HHMMSS.csv`. CSV `timestamp_local` values and metadata local timestamps are written in `Asia/Shanghai`.
+
+Maintenance controls are available at `http://127.0.0.1:8765/maintenance`. Set `LS336_MAINT_PASSWORD` before production use; otherwise the default maintenance password is `ls336-maint`. The maintenance page can pause/resume logging, create a new log file, download the current CSV, and perform controlled Loop 1 PID writes. PID writes require confirmation in the browser and are recorded in the metadata audit log with old and new values.
 
 ## Mac Browser Dashboard
 
@@ -96,7 +94,7 @@ There are two supported sharing modes:
 
 ### Public Demo Website
 
-The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID readback values, rhythm warmup, safety warnings, and CSV logging.
+The static demo in `web/index.html` can be deployed to Vercel or any static web host. It does not connect to hardware; it simulates a Lake Shore 336 so collaborators can open the interface, test English/Chinese labels, heater range, PID readback values, safety warnings, and temporary browser CSV downloads.
 
 Vercel workflow:
 
@@ -143,7 +141,7 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 - `IOC: build` builds the EPICS IOC with `make`.
 - `IOC: readiness check` verifies the expected build artifacts and client check commands.
 - `IOC: run` starts the IOC and prompts for optional runtime macros such as `TTY=/dev/ttyS4` or `PREFIX=LS336_DEV:`.
-- `IOC: dashboard` opens a visual temperature and warmup control panel.
+- `IOC: dashboard` opens a visual temperature and control panel.
 - `Windows: direct dashboard` opens the Windows serial dashboard without EPICS.
 
 ## Public PVs
@@ -154,11 +152,6 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 | `LS336:Sample:TEMP_RBV` | read | Input B temperature, mapped to sample-side temperature. |
 | `LS336:Loop1:SETP` | write | Requested Loop 1 setpoint in K. Limited to 350 K. |
 | `LS336:Loop1:SETP_RBV` | read | Loop 1 setpoint read back from the controller. |
-| `LS336:Loop1:WARMUP:TARGET` | write | Stepwise warmup target in K. Limited to 350 K. |
-| `LS336:Loop1:WARMUP:STEP` | write | Step size for warmup moves, for example 5 K or 10 K. |
-| `LS336:Loop1:WARMUP:STEP:5K` | write | Processes a 5 K warmup step preset into `WARMUP:STEP`. |
-| `LS336:Loop1:WARMUP:STEP:10K` | write | Processes a 10 K warmup step preset into `WARMUP:STEP`. |
-| `LS336:Loop1:WARMUP:NEXT` | write | Processes one warmup step toward the target by writing `Loop1:SETP`. |
 | `LS336:Loop1:RAMP:ENABLE` | write | Enable or disable Loop 1 ramping. |
 | `LS336:Loop1:RAMP:ENABLE_RBV` | read | Ramp enable state read back from the controller. |
 | `LS336:Loop1:RAMP:RATE` | write | Requested Loop 1 ramp rate in K/min. Limited to 10 K/min. |
@@ -172,8 +165,6 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 The public write PVs use conservative defaults:
 
 - `LS336:Loop1:SETP` is limited to `350 K`.
-- `LS336:Loop1:WARMUP:TARGET` is limited to `350 K`.
-- `LS336:Loop1:WARMUP:STEP` is limited to `50 K` and defaults to `5 K`.
 - `LS336:Loop1:RAMP:RATE` is limited to `10 K/min`.
 - The database includes `validate_setpoint` and `validate_ramp_rate` calculation records so limit behavior is explicit in the IOC database.
 
@@ -260,7 +251,7 @@ After the IOC is running and EPICS client commands are in `PATH`, open the dashb
 python3 scripts/ls336_dashboard.py
 ```
 
-The dashboard shows cold-head and sample temperatures, communication status, setpoint, ramp state, ramp rate, and heater output. It also provides buttons for 5 K and 10 K warmup steps. Use `--prefix` if you started the IOC with a different PV prefix:
+The dashboard shows cold-head and sample temperatures, communication status, setpoint, ramp state, ramp rate, and heater output. Use `--prefix` if you started the IOC with a different PV prefix:
 
 ```bash
 python3 scripts/ls336_dashboard.py --prefix LS336_DEV:
@@ -272,16 +263,6 @@ Set a safe Loop 1 target and ramp:
 caput LS336:Loop1:SETP 300
 caput LS336:Loop1:RAMP:ENABLE 1
 caput LS336:Loop1:RAMP:RATE 1
-```
-
-Step the warmup target in a 5 K or 10 K rhythm:
-
-```bash
-caput LS336:Loop1:WARMUP:TARGET 300
-caput LS336:Loop1:WARMUP:STEP:5K.PROC 1
-caput LS336:Loop1:WARMUP:NEXT.PROC 1
-caput LS336:Loop1:WARMUP:STEP:10K.PROC 1
-caput LS336:Loop1:WARMUP:NEXT.PROC 1
 ```
 
 Confirm readbacks:

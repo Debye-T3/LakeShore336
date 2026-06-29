@@ -54,9 +54,6 @@ echo "Safe write checks:"
 echo "  caput LS336:Loop1:SETP 300"
 echo "  caput LS336:Loop1:RAMP:ENABLE 1"
 echo "  caput LS336:Loop1:RAMP:RATE 1"
-echo "  caput LS336:Loop1:WARMUP:TARGET 300"
-echo "  caput LS336:Loop1:WARMUP:STEP 5"
-echo "  caput LS336:Loop1:WARMUP:NEXT.PROC 1"
 
 if [ "$failures" -gt 0 ]; then
     exit 1

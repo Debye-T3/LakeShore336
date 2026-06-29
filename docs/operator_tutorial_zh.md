@@ -1,287 +1,164 @@
 # Lake Shore 336 ARPES 温控面板使用教程
 
-这份教程给实验室使用者看。目标是：能打开面板、看温度、连接真实 Lake Shore 336、设置安全升温，并知道哪些功能只是演示，哪些会真的控制仪器。
+这份教程给实验室使用者看。目标是：能打开本地面板、读取温度、连接真实 Lake Shore 336、设置安全升温，并把温度记录保存成可归档的 CSV 文件。
 
-## 1. 先分清两种页面
-
-### Vercel 公开网站
-
-Vercel 网站适合给别人预览界面、测试按钮、看中文/英文切换和 Demo 数据。
-
-重要：Vercel 不能直接连接实验室仪器，也不能控制真实温控器。浏览器网页没有权限直接访问办公室电脑上的 COM 口。
+## 1. 页面类型
 
 ### 本地控制页面
 
-真实控制 Lake Shore 336 时，必须在连接着仪器的那台电脑上运行本地服务，然后打开：
+真实控制 Lake Shore 336 时，必须在连接着仪器的电脑上运行本地服务，然后打开：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-只有这个本地页面可以连接串口并读写仪器。
+只有本地页面可以访问电脑上的 COM 口并读写仪器。
 
-## 2. Windows 电脑怎么启动
+### 公开 Demo 页面
 
-办公室电脑如果只能用 Windows，不需要 Linux，也不需要 WSL。
+Vercel 或静态网页只适合预览界面和测试 Demo 数据。它不能连接实验室仪器，也不能控制真实温控器。静态页面里的 CSV 下载只是浏览器临时数据，不会生成可归档的本地日志文件。
 
-最友好的方式是双击项目文件夹里的：
+## 2. Windows 启动
+
+最简单的方式是在项目文件夹中双击：
 
 ```text
 START_WINDOWS_DASHBOARD.bat
 ```
 
-它会自动检查 Python、安装需要的串口库、启动本地网页面板，并打开：
+它会检查 Python、安装串口依赖、启动本地网页服务，并打开：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-使用面板时，不要关闭弹出来的黑色命令窗口。实验结束后，可以在那个窗口里按 `Ctrl+C` 停止服务。
-
-如果想手动运行，也可以先安装 Python 3，然后打开 PowerShell，进入项目目录：
-
-```powershell
-cd LakeShore336
-```
-
-第一次使用需要安装串口库：
+手动运行时，可以在 PowerShell 中执行：
 
 ```powershell
 python -m pip install -r requirements.txt
-```
-
-启动网页面板：
-
-```powershell
 python scripts\ls336_web_dashboard.py
 ```
 
-PowerShell 里会显示一个地址。通常是：
+## 3. 连接真实 Lake Shore 336
 
-```text
-http://127.0.0.1:8765
-```
+1. 用 USB/串口线把 Lake Shore 336 接到电脑。
+2. 刷新本地页面，端口列表里应出现真实串口，例如 `COM3`、`COM4`。
+3. 选择真实端口，不要选择 `DEMO`。
+4. 点击 `CONNECT`。
+5. 确认 Cold Head Temp 和 Sample Stage Temp 出现真实读数。
 
-用浏览器打开这个地址。
+如果只是测试界面，请选择 `DEMO`。Demo 模式不会控制任何真实设备。
 
-## 3. Mac 电脑怎么启动
+## 4. 主要参数
 
-最友好的方式是双击项目文件夹里的：
+- Cold Head Temp：冷头温度，通常对应 Lake Shore 的 A 通道。
+- Sample Stage Temp：样品台温度，通常对应 B 通道，实验中更应该关注这个读数。
+- Setpoint：Loop 1 目标温度，单位 K。
+- Ramp：升温速率，单位 K/min。
+- Heater Range：加热档位，首次真实测试建议从 `Low` 开始。
+- PID：普通实验页面只读取仪器当前 PID；PID 写入只在维护页面中开放。
 
-```text
-START_MAC_DASHBOARD.command
-```
+## 5. 安全升温建议
 
-它会自动检查 Python、安装需要的串口库、启动本地网页面板，并打开：
+第一次真实测试时，不要一次设置很远的目标温度。
 
-```text
-http://127.0.0.1:8765
-```
+推荐流程：
 
-如果 macOS 提示不能打开，或者双击没有反应，打开 Terminal 进入项目目录：
-
-```bash
-cd /Users/cocoyou/LakeShore336
-```
-
-然后运行一次：
-
-```bash
-chmod +x START_MAC_DASHBOARD.command scripts/run_web_dashboard_mac.sh
-./START_MAC_DASHBOARD.command
-```
-
-如果想手动运行，也可以用：
-
-安装串口库：
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-启动面板：
-
-```bash
-python3 scripts/ls336_web_dashboard.py
-```
-
-然后打开：
-
-```text
-http://127.0.0.1:8765
-```
-
-## 4. Demo 测试
-
-如果只是想确认界面能跑，不要连接真实仪器。
-
-1. 右上角端口选择 `DEMO`。
-2. 点击 `CONNECT`。
-3. 左边应该显示 `CONNECTED`。
-4. Cold Head Temp 和 Sample Stage Temp 会出现虚拟温度。
-5. 曲线图会开始画出冷头和样品温度趋势。
-
-Demo 模式不会控制任何真实设备，可以放心测试。
-
-## 5. 连接真实 Lake Shore 336
-
-先把 Lake Shore 336 用 USB/串口线接到电脑。
-
-刷新页面后，右上角端口列表里应该出现真实串口。
-
-Windows 常见端口名：
-
-```text
-COM3
-COM4
-COM5
-```
-
-Mac 常见端口名：
-
-```text
-/dev/cu.usbserial-xxxx
-/dev/cu.usbmodem-xxxx
-```
-
-不要选明显像蓝牙的端口，例如：
-
-```text
-/dev/cu.BLTH
-```
-
-连接步骤：
-
-1. 选择真实端口。
-2. 点击 `CONNECT`。
-3. 如果成功，状态会变成 `CONNECTED`。
-4. Cold Head Temp 和 Sample Stage Temp 会显示真实温度。
-
-连接后，面板会自动刷新温度，不需要一直点 `READ`。
-
-## 6. 面板上的主要参数是什么意思
-
-### Cold Head Temp
-
-冷头温度。通常对应 Lake Shore 的 A 通道。
-
-### Sample Stage Temp
-
-样品台温度。通常对应 Lake Shore 的 B 通道。ARPES 实验中更应该关注这个读数。
-
-### Setpoint
-
-目标温度，单位 K。
-
-第一次测试真实仪器时，不要一下设很远。建议只比当前温度高 `2 K` 到 `5 K`。
-
-### Ramp
-
-升温速率，单位 K/min。
-
-建议第一次用：
-
-```text
-0.2 或 0.5 K/min
-```
-
-### Heater Range
-
-加热档位，用来控制加热能力：
-
-| 档位 | 含义 | 建议 |
-| --- | --- | --- |
-| Off | 关闭加热 | 停止加热或安全状态 |
-| Low | 低档 | 第一次真实测试推荐 |
-| Medium | 中档 | 确认系统稳定后再用 |
-| High | 高档 | 只在实验负责人确认后使用 |
-
-### PID
-
-PID 是 Lake Shore 的控温逻辑参数：
-
-| 参数 | 作用 |
-| --- | --- |
-| P | 对温差的直接响应强度 |
-| I | 长时间误差修正 |
-| D | 抑制过快变化或过冲 |
-
-面板只显示仪器当前 PID，不在网页里写入 PID。前期调参时，请在 Lake Shore 336 仪器本机按实验室流程设置 PID；没有确认前，不建议随意大幅修改 PID。
-
-## 7. 第一次真实升温建议流程
-
-先只读温度，不要马上控制。
-
-确认读数正常后：
-
-1. 看当前 Sample Stage Temp，比如 `60 K`。
-2. Setpoint 设成 `62 K` 或 `65 K`。
-3. Ramp 设成 `0.2` 或 `0.5`。
+1. 先只连接并读取温度。
+2. 确认读数正常后，把 Setpoint 设为比当前样品温度高 `2 K` 到 `5 K`。
+3. Ramp 设为 `0.2` 或 `0.5 K/min`。
 4. Heater Range 选 `Low`。
-5. 在面板上确认 PID 读回值；如需修改 PID，请先在仪器本机完成。
-6. 点击 `APPLY`。
-7. 观察温度曲线是否平稳上升。
+5. 点击 `APPLY`。
+6. 观察温度曲线是否平稳上升。
 
-如果温度上升太快、过冲明显、或者 heater 输出长期接近 100%，先点 `OFF`，再检查参数。
+如果温度上升过快、明显过冲，或 heater 输出长期接近 100%，先点击 `OFF`，再检查参数。
 
-## 8. 节奏升温怎么用
+## 6. 温度日志归档
 
-节奏升温适合一点一点升，例如每次升 `5 K` 或 `10 K`。
+本地网页服务支持自动归档温度记录。连接成功后会自动开始记录，实验用户不需要点击开始，也不能在普通页面停止记录。
 
-参数：
+使用方式：
 
-- `Step K`: 每一步增加多少 K。
-- `Rhythm min`: 每隔几分钟自动前进一步。
-- `Stable ±K`: 判断接近目标温度的容差。
+1. 连接 `DEMO` 或真实仪器。
+2. 确认记录状态显示为 `ON`。
+3. 保持本地 Python 服务运行，面板会随自动刷新持续写入数据。
+4. 点击 `DOWNLOAD CSV` 下载当前 CSV。
 
-手动一步：
-
-1. `Step K` 填 `5`。
-2. 点击 `STEP`。
-3. Setpoint 会增加 `5 K`。
-
-自动节奏：
-
-1. `Step K` 填 `5`。
-2. `Rhythm min` 填 `5` 或更长。
-3. 点击 `START RHYTHM`。
-4. 需要停止时再点一次。
-
-真实仪器第一次测试时，不要把 `Rhythm min` 设得太短。
-
-## 9. CSV 记录
-
-点击 `LOG` 后，面板会记录读数。
-
-点击 `CSV` 可以下载数据文件：
+归档文件默认保存在项目目录下：
 
 ```text
-ls336_arpes_log.csv
+logs/
 ```
 
-CSV 里包含：
+默认按北京时间每天创建两个文件：
 
-- 时间
-- Cold Head 温度
-- Sample 温度
+```text
+ls336_temperature_YYYYMMDD.csv
+ls336_temperature_YYYYMMDD.meta.json
+```
+
+CSV 包含：
+
+- UTC ISO 时间
+- 本地时间
+- 冷头温度
+- 样品温度
+- A/B/C/D 通道温度
 - Setpoint
-- Ramp
-- Heater Range
+- Ramp 开关和 ramp rate
+- Heater range
 - Heater 输出
 - PID 读回值
+- 通信状态
+- 稳定状态
 
-## 10. 常见问题
+`.meta.json` 记录连接 session、端口、模式、CSV 字段、项目路径和维护操作，方便后续归档。
+
+CSV 里的 `timestamp_local` 和 metadata 里的本地时间都使用北京时间 `Asia/Shanghai`。
+
+## 7. 维护页面
+
+维护页面地址：
+
+```text
+http://127.0.0.1:8765/maintenance
+```
+
+维护页面需要密码。正式使用前建议在启动本地服务前设置：
+
+```powershell
+$env:LS336_MAINT_PASSWORD="your-password"
+python scripts\ls336_web_dashboard.py
+```
+
+如果没有设置环境变量，默认维护密码是：
+
+```text
+ls336-maint
+```
+
+维护页面可以执行：
+
+- 暂停/恢复记录
+- 强制新建当前日期的日志文件
+- 下载当前 CSV
+- 读取 PID
+- 受控写入 PID
+
+PID 写入属于高风险维护操作。写入前页面会要求确认，写入后旧值和新值会记录到 `.meta.json` 的审计记录中。
+
+## 8. 常见问题
 
 ### 页面里只有 DEMO，没有 COM 口
 
 检查：
 
-- Lake Shore 是否真的插在这台电脑上。
-- USB 线是不是数据线。
-- Windows 设备管理器里有没有 `Ports (COM & LPT)`。
-- 是否需要 USB-serial 驱动。
+- Lake Shore 是否接在这台电脑上。
+- USB 线是否是数据线。
+- Windows 设备管理器里是否有 `Ports (COM & LPT)`。
+- 串口是否被其他软件占用。
 
-### 点 CONNECT 后失败
+### 点击 CONNECT 后失败
 
 常见原因：
 
@@ -290,25 +167,16 @@ CSV 里包含：
 - 串口设置和仪器不匹配。
 - 仪器没有回复。
 
-把页面底部 log 里的错误信息发给维护者。
+### CSV 没有写入
 
-### 温度一直是 `-- K`
+真实归档只在本地 Python 服务页面中可用。Vercel 或直接打开 `web/index.html` 的静态页面只能下载浏览器临时 CSV，不能写入 `logs/`。
 
-说明还没有成功读到仪器。
+如果本地页面显示记录错误，通常是 `logs/` 目录不可写或磁盘空间不足。请把页面中的错误信息发给维护人员。
 
-先用 `DEMO` 确认页面正常，再换真实 COM 口。
-
-### Vercel 页面能不能控制仪器
-
-不能。Vercel 页面只能演示。
-
-真实控制必须在插着 Lake Shore 的电脑上运行本地服务。
-
-## 11. 安全提醒
+## 9. 安全提醒
 
 - 第一次真实测试用 `Low` heater range。
-- 第一次 setpoint 只比当前温度高几 K。
-- Ramp 不要太大，建议从 `0.2` 或 `0.5 K/min` 开始。
-- PID 只能在仪器本机按实验室流程调整，不要随便大幅改。
-- 如果不确定，先点 `OFF`。
+- 第一次 setpoint 只比当前样品温度高几 K。
+- Ramp 建议从 `0.2` 或 `0.5 K/min` 开始。
+- PID 只能由维护人员在维护页面或仪器本机按实验室流程调整。
 - 不要把真实控制页面暴露到公网。
