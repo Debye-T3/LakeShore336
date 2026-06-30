@@ -99,8 +99,7 @@ ls336_temperature_YYYYMMDD.meta.json
 
 CSV 包含：
 
-- UTC ISO 时间
-- 本地时间
+- 北京时间 `timestamp_local`
 - 冷头温度
 - 样品温度
 - A/B/C/D 通道温度

@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover
 DEFAULT_BAUD = 57600
 DEFAULT_TIMEOUT = 2.0
 DEFAULT_MAINT_PASSWORD = "ls336-maint"
+COMMAND_PACE_SECONDS = 0.15
 if getattr(sys, "frozen", False):
     ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
     LOG_DIR = Path(sys.executable).parent / "logs"
@@ -41,7 +42,6 @@ BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 INPUT_CHANNELS = ("A", "B", "C", "D")
 RANGE_LABELS = {"0": "Off", "1": "Low", "2": "Medium", "3": "High"}
 CSV_FIELDS = [
-    "timestamp_iso",
     "timestamp_local",
     "cold_head_K",
     "sample_K",
@@ -87,6 +87,17 @@ def normalize_range(reply: str) -> str:
     return reply.strip().split(",", 1)[0]
 
 
+def add_requested_control_values(
+    values: dict[str, str], value: float, ramp_rate: float, heater_range: int
+) -> dict[str, str]:
+    values["requested_setpoint"] = f"{value:.3f}"
+    values["requested_ramp_enable"] = "On" if ramp_rate > 0 else "Off"
+    values["requested_ramp_rate"] = f"{ramp_rate:.3f}"
+    values["requested_heater_range_raw"] = str(heater_range)
+    values["requested_heater_range"] = RANGE_LABELS[str(heater_range)]
+    return values
+
+
 def stable_state(values: dict[str, str], tolerance: float = 0.2) -> str:
     try:
         sample = float(values["sample"])
@@ -98,10 +109,6 @@ def stable_state(values: dict[str, str], tolerance: float = 0.2) -> str:
 
 def today_key() -> str:
     return datetime.now(BEIJING_TZ).strftime("%Y%m%d")
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def beijing_now() -> datetime:
@@ -154,6 +161,10 @@ class LakeShoreSerialClient:
         self.open()
         assert self._serial is not None
         self._serial.write(f"{command}\r\n".encode("ascii"))
+
+    def _paced_write(self, command: str) -> None:
+        self._raw_write(command)
+        time.sleep(COMMAND_PACE_SECONDS)
 
     def read_pid(self) -> tuple[str, str, str]:
         return split_pid(self.query("PID? 1"))
@@ -232,12 +243,11 @@ class LakeShoreSerialClient:
         self.sample_input = normalize_input(sample_input, self.sample_input)
         self.control_input = normalize_input(control_input, self.sample_input)
         with self._lock:
-            self._raw_write(f"CSET 1,{self.control_input},1,1")
-            self._raw_write(f"RANGE 1,{heater_range}")
-            self._raw_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
-            self._raw_write(f"SETP 1,{value:.3f}")
-            time.sleep(0.5)
-            return self.read_all()
+            self._paced_write(f"CSET 1,{self.control_input},1,1")
+            self._paced_write(f"RANGE 1,{heater_range}")
+            self._paced_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
+            self._paced_write(f"SETP 1,{value:.3f}")
+            return add_requested_control_values(self.read_all(), value, ramp_rate, heater_range)
 
 
 class DemoLakeShoreClient:
@@ -329,7 +339,7 @@ class DemoLakeShoreClient:
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
         self.heater_range = heater_range
-        return self.read_all()
+        return add_requested_control_values(self.read_all(), value, ramp_rate, heater_range)
 
     def _simulate_temperature(self) -> None:
         now = time.monotonic()
@@ -361,7 +371,7 @@ class LogArchive:
         self.current_key = ""
         self.current_port = ""
         self.current_mode = ""
-        self.last_write_iso = ""
+        self.last_write_local = ""
         self.error = ""
 
     def start_session(self, selected_port: str, mode: str) -> dict[str, object]:
@@ -377,7 +387,6 @@ class LogArchive:
             payload = self._metadata()
             payload.setdefault("sessions", []).append(
                 {
-                    "started_iso": utc_now(),
                     "started_local": beijing_now().isoformat(timespec="seconds"),
                     "selected_port": selected_port,
                     "mode": mode,
@@ -415,7 +424,6 @@ class LogArchive:
                 assert self.csv_path is not None
                 now = beijing_now()
                 row = {
-                    "timestamp_iso": utc_now(),
                     "timestamp_local": now.isoformat(timespec="seconds"),
                     "cold_head_K": values.get("cold_head", ""),
                     "sample_K": values.get("sample", ""),
@@ -437,7 +445,7 @@ class LogArchive:
                 with self.csv_path.open("a", newline="", encoding="utf-8") as handle:
                     csv.DictWriter(handle, fieldnames=CSV_FIELDS).writerow(row)
                 self.rows += 1
-                self.last_write_iso = row["timestamp_iso"]
+                self.last_write_local = row["timestamp_local"]
                 self.error = ""
             except OSError as exc:
                 self.error = str(exc)
@@ -454,7 +462,7 @@ class LogArchive:
             "metadata": str(self.meta_path) if self.meta_path else "",
             "log_dir": str(self.log_dir),
             "filename": self.csv_path.name if self.csv_path else "",
-            "last_write_iso": self.last_write_iso,
+            "last_write_local": self.last_write_local,
             "error": self.error,
         }
 
@@ -508,7 +516,6 @@ class LogArchive:
         payload = self._metadata()
         payload.setdefault("operations", []).append(
             {
-                "timestamp_iso": utc_now(),
                 "timestamp_local": beijing_now().isoformat(timespec="seconds"),
                 "operator": operator,
                 "action": action,

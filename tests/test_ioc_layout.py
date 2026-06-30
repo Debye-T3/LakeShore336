@@ -1,4 +1,8 @@
+import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -6,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def load_web_dashboard():
+    path = ROOT / "scripts" / "ls336_web_dashboard.py"
+    spec = importlib.util.spec_from_file_location("ls336_web_dashboard_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_database_exposes_required_public_pvs():
@@ -133,7 +146,6 @@ def test_web_dashboard_auto_archives_temperature_logs_with_maintenance_controls(
         "ls336_temperature_",
         ".meta.json",
         "CSV_FIELDS",
-        "timestamp_iso",
         "timestamp_local",
         "started_local",
         "cold_head_K",
@@ -164,6 +176,14 @@ def test_web_dashboard_auto_archives_temperature_logs_with_maintenance_controls(
         assert snippet in dashboard
 
     for snippet in [
+        "timestamp_iso",
+        "last_write_iso",
+        "started_iso",
+        "utc_now",
+    ]:
+        assert snippet not in dashboard
+
+    for snippet in [
         "CSV File",
         "Rows Written",
         "Last Write",
@@ -186,6 +206,138 @@ def test_web_dashboard_auto_archives_temperature_logs_with_maintenance_controls(
         assert snippet not in demo
 
     assert "logs/" in gitignore
+
+
+def test_static_demo_csv_contains_only_beijing_timestamp():
+    demo = read("web/index.html")
+
+    assert "function beijingIsoTime(" in demo
+    assert "beijingIsoTime()" in demo
+    assert "'timestamp_local','cold_head_K'" in demo
+    assert "timestamp_iso" not in demo
+    assert "new Date().toISOString()" not in demo
+
+
+def test_backend_log_status_exposes_beijing_last_write():
+    dashboard = load_web_dashboard()
+    with TemporaryDirectory(dir=ROOT) as temp_dir:
+        archive = dashboard.LogArchive(Path(temp_dir))
+        client = dashboard.DemoLakeShoreClient()
+
+        archive.start_session("DEMO", "demo")
+        archive.append(client.read_all())
+        status = archive.status()
+
+        assert "last_write_iso" not in status
+        assert str(status["last_write_local"]).endswith("+08:00")
+
+
+def test_demo_control_returns_requested_readbacks_and_rejects_unsafe_values():
+    dashboard = load_web_dashboard()
+    client = dashboard.DemoLakeShoreClient()
+
+    values = client.set_control(95.0, 1.25, 2, "B", "A", "A")
+
+    assert values["setpoint"] == "95.000"
+    assert values["ramp_enable"] == "On"
+    assert values["ramp_rate"] == "1.250"
+    assert values["heater_range_raw"] == "2"
+    assert values["heater_range"] == "Medium"
+    assert values["cold_input"] == "B"
+    assert values["sample_input"] == "A"
+    assert values["control_input"] == "A"
+
+    with pytest.raises(ValueError, match="0..350 K"):
+        client.set_control(351.0, 1.0, 1, "A", "B", "B")
+    with pytest.raises(ValueError, match="0..10 K/min"):
+        client.set_control(95.0, 10.1, 1, "A", "B", "B")
+    with pytest.raises(ValueError, match="Heater range"):
+        client.set_control(95.0, 1.0, 4, "A", "B", "B")
+
+
+def test_web_dashboard_keeps_command_inputs_separate_from_readbacks():
+    demo = read("web/index.html")
+    update_body = demo.split("function update(d){", 1)[1].split("// 鈹€鈹€ Stability", 1)[0]
+
+    for snippet in [
+        "setIfNotEditing('target',d.setpoint)",
+        "setIfNotEditing('ramp',d.ramp_rate)",
+        "setIfNotEditing('range',d.heater_range_raw)",
+        "document.getElementById('enable_ramp').checked=(d.ramp_enable",
+    ]:
+        assert snippet not in update_body
+
+    assert "function syncCommandInputsFromReadback(d)" in demo
+    assert "syncCommandInputsFromReadback(d);" in demo
+    assert "logControlReadback(body,result)" in demo
+    assert "pendingControlRequest" in demo
+
+
+def test_serial_control_writes_only_control_commands_with_pacing(monkeypatch):
+    dashboard = load_web_dashboard()
+    writes: list[str] = []
+    sleeps: list[float] = []
+
+    class FakeSerialClient(dashboard.LakeShoreSerialClient):
+        def __init__(self) -> None:
+            self._lock = dashboard.threading.RLock()
+            self.cold_input = "A"
+            self.sample_input = "B"
+            self.control_input = "B"
+
+        def _raw_write(self, command: str) -> None:
+            writes.append(command)
+
+        def read_all(self) -> dict[str, str]:
+            return {
+                "setpoint": "95.000",
+                "ramp_enable": "On",
+                "ramp_rate": "1.250",
+                "heater_range_raw": "2",
+                "heater_range": "Medium",
+            }
+
+    monkeypatch.setattr(dashboard.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    values = FakeSerialClient().set_control(95.0, 1.25, 2, "B", "A", "A")
+
+    assert writes == ["CSET 1,A,1,1", "RANGE 1,2", "RAMP 1,1,1.250", "SETP 1,95.000"]
+    assert "PID 1," not in " ".join(writes)
+    assert sleeps == [dashboard.COMMAND_PACE_SECONDS] * 4
+    assert values["requested_setpoint"] == "95.000"
+    assert values["requested_ramp_rate"] == "1.250"
+    assert values["requested_heater_range_raw"] == "2"
+
+
+def test_portable_build_script_creates_clean_verified_offline_package():
+    build = read("scripts/build_package.bat")
+
+    assert '--add-data "logs;logs"' not in build
+    assert 'mkdir "dist\\LakeShore336\\logs"' in build
+    assert 'copy /Y "scripts\\run_portable.bat" "dist\\LakeShore336\\START.bat" >nul || exit /b 1' in build
+    assert 'copy /Y "docs\\offline_package_zh.md" "dist\\LakeShore336\\OFFLINE_GUIDE_ZH.md" >nul || exit /b 1' in build
+    assert "docs\\offline_package_zh.md" in build
+    assert "scripts\\smoke_test_portable.py" in build
+    assert "scripts\\create_portable_zip.py" in build
+    assert "LakeShore336_portable.zip" in build
+
+
+def test_portable_smoke_test_checks_pages_control_and_archiving():
+    smoke = read("scripts/smoke_test_portable.py")
+
+    for snippet in [
+        "--executable",
+        "--port",
+        "--timeout",
+        "/maintenance",
+        "/api/ports",
+        "/api/connect",
+        "/api/control",
+        "/api/log/status",
+        "last_write_local",
+        "terminate",
+    ]:
+        assert snippet in smoke
 
 
 def test_documentation_matches_current_public_workflow():
