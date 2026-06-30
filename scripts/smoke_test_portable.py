@@ -130,8 +130,10 @@ def smoke_test(executable: Path, port: int, timeout: float, cleanup_logs: bool) 
         if not csv_path.is_file() or not metadata_path.is_file():
             raise RuntimeError("Packaged CSV or metadata archive was not created")
         header = csv_path.read_text(encoding="utf-8").splitlines()[0]
-        if not header.startswith("timestamp_iso,timestamp_local,"):
+        if not header.startswith("timestamp_local,"):
             raise RuntimeError(f"Unexpected CSV header: {header}")
+        if "timestamp_iso" in header:
+            raise RuntimeError(f"UTC timestamp column should not be present: {header}")
     finally:
         process.terminate()
         try:

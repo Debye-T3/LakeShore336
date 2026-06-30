@@ -37,7 +37,7 @@
 - `ls336_temperature_YYYYMMDD.csv`
 - `ls336_temperature_YYYYMMDD.meta.json`
 
-日期和 `timestamp_local` 使用北京时间 `Asia/Shanghai`，带 `+08:00` 时区偏移；`timestamp_iso` 保留 UTC，便于跨系统交换。
+日期和 `timestamp_local` 使用北京时间 `Asia/Shanghai`，带 `+08:00` 时区偏移；CSV 不再额外记录 UTC 时间列。
 
 ## 维护页面
 

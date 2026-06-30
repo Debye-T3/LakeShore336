@@ -405,7 +405,7 @@ button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
 
 <script>
 // ── State ──
-let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={};
+let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={},pendingControlRequest=null;
 let editingInputs=new Set();
 let demo={inputs:{A:82.4,B:84.1,C:296,D:296},coldInput:'A',sampleInput:'B',controlInput:'B',setpoint:90,ramp:.5,range:3,pid:[40,80,2],last:performance.now()};
 const rangeNames=['Off','Low','Medium','High'];
@@ -430,7 +430,7 @@ async function loadPorts(){
   try{const d=await api('/api/ports');backend=true;fillPorts(d.ports);await refreshLogStatus()}catch{
     backend=false;fillPorts(['DEMO']);logEnabled=true;
     log('Demo mode — CSV is browser-temporary only. Connect a real instrument for permanent archiving.');
-    updateLogStatus({active:true,filename:'demo temporary CSV',rows:0,last_write_iso:'--'});
+    updateLogStatus({active:true,filename:'demo temporary CSV',rows:0,last_write_local:'--'});
   }
 }
 function fillPorts(ports){
@@ -443,6 +443,7 @@ async function connect(){
     const port=document.getElementById('port').value;
     const d=backend?await api('/api/connect',{port}):simulate();
     update(d);
+    syncCommandInputsFromReadback(d);
     setStatus(port==='DEMO'?'demo':'live',port==='DEMO'?'DEMO MODE':'CONNECTED');
     document.getElementById('status_dot').classList.remove('dead');
     document.getElementById('status_dot').classList.add('live');
@@ -470,7 +471,12 @@ async function applyInputs(){
 }
 async function applyControl(){
   const body={...inputBody(),target:number('target'),ramp:document.getElementById('enable_ramp').checked?number('ramp'):0,range:Number(document.getElementById('range').value)};
-  try{const result=backend?await api('/api/control',body):demoControl(body);update(result);log('Settings applied — Setpoint: '+body.target+' K  Range: '+rangeNames[body.range])}catch(e){log('ERROR: '+e.message)}
+  try{
+    pendingControlRequest={...body,created:Date.now(),warned:false};
+    const result=backend?await api('/api/control',body):demoControl(body);
+    update(result);
+    logControlReadback(body,result);
+  }catch(e){pendingControlRequest=null;log('ERROR: '+e.message)}
 }
 function turnOff(){
   document.getElementById('range').value='0';
@@ -495,16 +501,42 @@ function simulate(){
 
 // ── Update Display ──
 function setIfNotEditing(id,value){const el=document.getElementById(id);if(el&&!editingInputs.has(id))el.value=value}
+function syncCommandInputsFromReadback(d){
+  if(d.setpoint!=null)setIfNotEditing('target',d.setpoint);
+  if(d.ramp_rate!=null)setIfNotEditing('ramp',d.ramp_rate);
+  if(d.heater_range_raw!=null)setIfNotEditing('range',d.heater_range_raw);
+  if(d.ramp_enable!=null&&!editingInputs.has('enable_ramp'))document.getElementById('enable_ramp').checked=(d.ramp_enable==='On'||d.ramp_enable===true);
+}
+function numberMatches(a,b,tol=0.001){return Math.abs(Number(a)-Number(b))<=tol}
+function controlMismatchSummary(request,d){
+  const items=[];
+  if(d.setpoint!=null&&!numberMatches(request.target,d.setpoint))items.push('setpoint requested '+Number(request.target).toFixed(3)+' K, readback '+d.setpoint+' K');
+  if(d.ramp_rate!=null&&!numberMatches(request.ramp,d.ramp_rate))items.push('ramp requested '+Number(request.ramp).toFixed(3)+' K/min, readback '+d.ramp_rate+' K/min');
+  if(d.heater_range_raw!=null&&String(request.range)!==String(d.heater_range_raw))items.push('range requested '+rangeNames[request.range]+', readback '+(d.heater_range||d.heater_range_raw));
+  return items;
+}
+function logControlReadback(request,d){
+  const rbRange=d.heater_range||rangeNames[Number(d.heater_range_raw)]||'--';
+  const mismatches=controlMismatchSummary(request,d);
+  log('Settings requested - Setpoint: '+Number(request.target).toFixed(3)+' K  Ramp: '+Number(request.ramp).toFixed(3)+' K/min  Range: '+rangeNames[request.range]);
+  log('Instrument readback - Setpoint: '+(d.setpoint??'--')+' K  Ramp: '+(d.ramp_rate??'--')+' K/min  Range: '+rbRange);
+  if(mismatches.length)log('Readback still differs: '+mismatches.join('; '));
+}
+function checkPendingControlRequest(){
+  if(!pendingControlRequest)return;
+  const mismatches=controlMismatchSummary(pendingControlRequest,lastData);
+  if(!mismatches.length){pendingControlRequest=null;return}
+  if(!pendingControlRequest.warned&&Date.now()-pendingControlRequest.created>8000){
+    pendingControlRequest.warned=true;
+    log('WARNING: instrument readback still differs after 8 s. Check COM port ownership, front-panel lock/local limits, and Lake Shore accepted ranges. '+mismatches.join('; '));
+  }
+}
 function update(d){
   lastData={...lastData,...d};
   ['cold_head','sample','setpoint','ramp_rate','heater','heater_range','input_a','input_b','input_c','input_d'].forEach(k=>{const el=document.getElementById(k);if(el)el.textContent=d[k]??lastData[k]??'--'});
   if(d.cold_input){setIfNotEditing('cold_input',d.cold_input);document.getElementById('cold_input_badge').textContent=d.cold_input}
   if(d.sample_input){setIfNotEditing('sample_input',d.sample_input);document.getElementById('sample_input_badge').textContent=d.sample_input}
   if(d.control_input)setIfNotEditing('control_input',d.control_input);
-  if(d.heater_range_raw)setIfNotEditing('range',d.heater_range_raw);
-  if(d.setpoint!=null)setIfNotEditing('target',d.setpoint);
-  if(d.ramp_rate!=null)setIfNotEditing('ramp',d.ramp_rate);
-  if(d.ramp_enable!=null)document.getElementById('enable_ramp').checked=(d.ramp_enable==='On'||d.ramp_enable===true);
   document.getElementById('pid_p_rb').textContent=d.pid_p??lastData.pid_p??'--';
   document.getElementById('pid_i_rb').textContent=d.pid_i??lastData.pid_i??'--';
   document.getElementById('pid_d_rb').textContent=d.pid_d??lastData.pid_d??'--';
@@ -513,8 +545,9 @@ function update(d){
   drawChart();
   updateStable();
   updateWarnings();
+  checkPendingControlRequest();
   if(d.log_status)updateLogStatus(d.log_status);
-  if(logEnabled&&!backend){appendLocalLog();updateLogStatus({active:true,filename:'demo temporary CSV',rows:logRows.length,last_write_iso:new Date().toISOString(),last_write_local:beijingIsoTime()})}
+  if(logEnabled&&!backend){appendLocalLog();updateLogStatus({active:true,filename:'demo temporary CSV',rows:logRows.length,last_write_local:beijingIsoTime()})}
 }
 
 // ── Stability ──
@@ -615,15 +648,15 @@ function updateLogStatus(s){
   st.className='log-value '+(s.error?'paused':(s.active?'on':'paused'));
   document.getElementById('log_file').textContent=s.filename||'--';
   document.getElementById('log_rows').textContent=String(s.rows??0);
-  document.getElementById('last_write').textContent=s.last_write_local||s.last_write_iso||'--';
+  document.getElementById('last_write').textContent=s.last_write_local||'--';
   if(s.error)log('LOG ERROR: '+s.error);
 }
 function appendLocalLog(){
-  logRows.push([new Date().toISOString(),beijingIsoTime(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
+  logRows.push([beijingIsoTime(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
 }
 function downloadCsv(){
   if(backend){window.location='/api/log/download';return}
-  const head=['timestamp_iso','timestamp_local','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_range','heater_percent','pid_p','pid_i','pid_d','comm','stable_state'];
+  const head=['timestamp_local','cold_head_K','sample_K','input_a_K','input_b_K','input_c_K','input_d_K','setpoint_K','ramp_enable','ramp_rate_K_per_min','heater_range','heater_percent','pid_p','pid_i','pid_d','comm','stable_state'];
   const csv=[head,...logRows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='ls336_static_demo_temporary_log.csv';a.click();URL.revokeObjectURL(a.href);
 }
