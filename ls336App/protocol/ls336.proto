@@ -47,10 +47,6 @@ getRange {
     in "%d";
 }
 
-setRange {
-    out "RANGE 1,%d";
-}
-
 getHeater {
     out "HTR? 1";
     in "%f";

@@ -184,17 +184,6 @@ record(ai, "$(P)Loop1:RAMP:RATE_RBV") {
     field(SCAN, "2 second")
 }
 
-record(mbbo, "$(P)Loop1:RANGE") {
-    field(DESC, "Loop 1 heater range command")
-    field(DTYP, "stream")
-    field(OUT,  "@ls336.proto setRange $(PORT)")
-    field(ZRST, "Off")
-    field(ONST, "Low")
-    field(TWST, "Medium")
-    field(THST, "High")
-    field(PINI, "NO")
-}
-
 record(mbbi, "$(P)Loop1:RANGE_RBV") {
     field(DESC, "Loop 1 heater range readback")
     field(DTYP, "stream")
