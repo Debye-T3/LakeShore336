@@ -37,6 +37,18 @@ getRampRate {
     in "%*d,%f";
 }
 
+setRampRate {
+    out "RAMP? 1";
+    in "%(\$1Loop1:RAMP:ENABLE:CACHE.VAL)d,%*f";
+    out "RAMP 1,%(\$1Loop1:RAMP:ENABLE:CACHE.VAL)d,%f";
+}
+
+setRampEnable {
+    out "RAMP? 1";
+    in "%*d,%(\$1Loop1:RAMP:RATE:CACHE.VAL)f";
+    out "RAMP 1,%d,%(\$1Loop1:RAMP:RATE:CACHE.VAL)f";
+}
+
 getRange {
     out "RANGE? 1";
     in "%d";

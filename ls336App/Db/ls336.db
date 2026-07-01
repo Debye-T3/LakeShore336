@@ -92,6 +92,25 @@ record(stringout, "$(P)ERR:SETP") {
     field(OUT,  "$(P)ERR PP")
 }
 
+record(longin, "$(P)Loop1:RAMP:ENABLE:CACHE") {
+    field(DESC, "Loop 1 ramp enable cache")
+    field(PINI, "NO")
+}
+
+record(ai, "$(P)Loop1:RAMP:RATE:CACHE") {
+    field(DESC, "Loop 1 ramp rate cache")
+    field(PINI, "NO")
+}
+
+record(bo, "$(P)Loop1:RAMP:ENABLE") {
+    field(DESC, "Loop 1 ramp enable command")
+    field(DTYP, "stream")
+    field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")
+    field(ZNAM, "Off")
+    field(ONAM, "On")
+    field(PINI, "NO")
+}
+
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
     field(DESC, "Loop 1 ramp enable readback")
     field(DTYP, "stream")
@@ -108,6 +127,34 @@ record(ai, "$(P)Loop1:RAMP:RATE_RBV") {
     field(EGU,  "K/min")
     field(PREC, "3")
     field(SCAN, "2 second")
+}
+
+record(ao, "$(P)Loop1:RAMP:RATE") {
+    field(DESC, "Loop 1 ramp rate command")
+    field(DTYP, "stream")
+    field(OUT,  "@ls336.proto setRampRate($(P)) $(PORT)")
+    field(EGU,  "K/min")
+    field(PREC, "3")
+    field(LOPR, "0")
+    field(HOPR, "10")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:RAMP:RATE:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+}
+
+record(calcout, "$(P)Loop1:RAMP:RATE:INVALID") {
+    field(DESC, "Loop 1 ramp rate validation")
+    field(INPA, "$(P)Loop1:RAMP:RATE.VAL NPP NMS")
+    field(CALC, "A<0||A>10")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)ERR:RAMP.PROC PP")
+}
+
+record(stringout, "$(P)ERR:RAMP") {
+    field(DESC, "Ramp rate validation error")
+    field(VAL,  "Ramp rate must be within 0..10 K/min")
+    field(OUT,  "$(P)ERR PP")
 }
 
 record(mbbo, "$(P)Loop1:RANGE") {

@@ -125,6 +125,48 @@ def test_protocol_covers_phase_one_queries_writes_and_omits_init():
     assert "@init" not in proto
 
 
+def test_ramp_write_protocol_queries_and_preserves_the_other_field():
+    proto = read("ls336App/protocol/ls336.proto")
+
+    for snippet in [
+        'setRampRate {',
+        'setRampEnable {',
+        'in "%(\\$1Loop1:RAMP:ENABLE:CACHE.VAL)d,%*f";',
+        'out "RAMP 1,%(\\$1Loop1:RAMP:ENABLE:CACHE.VAL)d,%f";',
+        'in "%*d,%(\\$1Loop1:RAMP:RATE:CACHE.VAL)f";',
+        'out "RAMP 1,%d,%(\\$1Loop1:RAMP:RATE:CACHE.VAL)f";',
+    ]:
+        assert snippet in proto
+
+
+def test_ramp_write_database_uses_private_caches_and_public_validation():
+    db = read("ls336App/Db/ls336.db")
+
+    for snippet in [
+        'record(longin, "$(P)Loop1:RAMP:ENABLE:CACHE")',
+        'record(ai, "$(P)Loop1:RAMP:RATE:CACHE")',
+        'record(bo, "$(P)Loop1:RAMP:ENABLE")',
+        'field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")',
+        'record(ao, "$(P)Loop1:RAMP:RATE")',
+        'field(OUT,  "@ls336.proto setRampRate($(P)) $(PORT)")',
+        'field(EGU,  "K/min")',
+        'field(PREC, "3")',
+        'field(LOPR, "0")',
+        'field(HOPR, "10")',
+        'field(SDIS, "$(P)Loop1:RAMP:RATE:INVALID PP MS")',
+        'field(DISV, "1")',
+        'field(DISS, "INVALID")',
+        'record(calcout, "$(P)Loop1:RAMP:RATE:INVALID")',
+        'field(INPA, "$(P)Loop1:RAMP:RATE.VAL NPP NMS")',
+        'field(CALC, "A<0||A>10")',
+        'field(OOPT, "When Non-zero")',
+        'field(OUT,  "$(P)ERR:RAMP.PROC PP")',
+        'record(stringout, "$(P)ERR:RAMP")',
+        'field(VAL,  "Ramp rate must be within 0..10 K/min")',
+    ]:
+        assert snippet in db
+
+
 def test_startup_and_scan_contracts_match_phase_one_polling():
     db = read("ls336App/Db/ls336.db")
     startup = read("iocBoot/iocLS336/st.cmd")
