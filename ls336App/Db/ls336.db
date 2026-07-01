@@ -234,7 +234,7 @@ record(mbbo, "$(P)COMM:STATUS") {
     field(ZRST, "Disconnected")
     field(ONST, "Connected")
     field(TWST, "Error")
-    field(VAL,  "1")
+    field(VAL,  "0")
     field(FLNK, "$(P)COMM:STATUS:ERROR")
 }
 

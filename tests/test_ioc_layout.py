@@ -256,7 +256,7 @@ def test_communication_status_uses_exact_severity_inputs_and_states():
         'field(ZRST, "Disconnected")',
         'field(ONST, "Connected")',
         'field(TWST, "Error")',
-        'field(VAL,  "1")',
+        'field(VAL,  "0")',
         'field(FLNK, "$(P)COMM:STATUS:ERROR")',
     ]:
         assert snippet in status_block
