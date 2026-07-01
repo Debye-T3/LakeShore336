@@ -1,279 +1,226 @@
-# Lake Shore 336 EPICS Integration Design
+# Lake Shore 336 Simplified EPICS Phase 1 Design
 
 ## Goal
 
-Turn the existing Lake Shore 336 project into a production EPICS device integration that can participate in a unified beamline control system.
+Build a small, standard EPICS IOC that reliably reads and controls the Lake Shore 336 over its USB virtual serial port.
 
-The EPICS IOC becomes the only process allowed to communicate with the instrument. Operator interfaces, automation, and temporary logging use EPICS PVs. The existing direct Python ZIP remains an emergency commissioning tool and may be used only while the IOC is stopped.
+Phase 1 proves that the controller can participate in a future unified beamline control system. It does not build the final production safety, archiving, security, or user-interface infrastructure.
 
-## Delivery Phases
-
-### Phase 1: Complete EPICS control over USB
-
-- Develop and test in WSL Ubuntu.
-- Use the existing USB virtual serial interface.
-- Expand the IOC to match the validated core functions of the web controller.
-- Add guarded, ordered control transactions and explicit readback verification.
-- Provide standard Channel Access PVs without committing to a beamline UI framework.
-- Move CSV logging to a separate EPICS client process.
-
-### Phase 2: Linux production and Ethernet
-
-- Deploy the same IOC source on the beamline Linux IOC host.
-- Replace the asyn serial port with `drvAsynIPPortConfigure`.
-- Connect to the Model 336 TCP socket on port 7777.
-- Preserve the PV names, protocol commands, safety behavior, and client interfaces.
-
-### Later beamline expansion
-
-Other beamline devices receive separate IOC modules and independent PV namespaces. They reuse the same conventions for health, permissions, transaction state, access security, logging, and commissioning. They are not added directly to the Lake Shore IOC.
-
-## System Boundaries
+## Architecture
 
 ```text
-Future beamline UI / automation / CSV logger
-                    |
-              EPICS Channel Access
-                    |
-             Lake Shore 336 IOC
-       validation, permission, transaction,
-        hardware readback, alarms, status
-                    |
-        Phase 1: asyn serial over USB
-        Phase 2: asyn TCP over Ethernet
-                    |
-             Lake Shore Model 336
+caget / caput / future beamline client
+                  |
+            EPICS records
+                  |
+            StreamDevice
+                  |
+          asyn serial over USB
+                  |
+          Lake Shore Model 336
 ```
 
-Rules:
+The IOC is the only process allowed to open the instrument connection.
 
-- The IOC is the single hardware owner.
-- The Python logger never sends instrument commands.
-- The direct ZIP must not run concurrently with the IOC.
-- WSL is a development environment; the production target is Linux.
-- The PV prefix is configurable. Development defaults to `LS336:`; production supplies the beamline prefix at startup.
+- The existing direct-control ZIP and direct serial logger remain available for maintenance.
+- They may run only while the IOC is stopped.
+- Phase 1 does not convert the existing logger to an EPICS client.
+- Development and USB commissioning run in WSL Ubuntu.
+- Production deployment to a Linux IOC host and Ethernet transport are later phases.
+- The PV prefix remains configurable, with `LS336:` as the development default.
 
-## Public PV Contract
+## Phase 1 Public PVs
 
-All names below are relative to configurable macro `$(P)`.
+All names are relative to `$(P)`.
 
-### Identity and IOC health
+### Identity and communication
 
-| PV | Type | Purpose |
+| PV | Access | Meaning |
 |---|---|---|
-| `IDN` | stringin | Instrument identity |
-| `COMM:STATUS` | mbbi | `Unknown`, `Connected`, or `Error` |
-| `ERR` | stringin | Last IOC or transaction error |
-| `IOC:VERSION` | stringin | IOC software version |
-| `IOC:HEARTBEAT` | longin | Incrementing IOC heartbeat |
+| `IDN` | read | Instrument identity |
+| `COMM:STATUS` | read | `Disconnected`, `Connected`, or `Error` |
+| `ERR` | read | Most recent generic IOC validation or communication summary |
 
-### Temperature inputs and software mappings
+Detailed timeout, write, read, disconnect, and parse failures are exposed through each StreamDevice record's `STAT` and `SEVR`. Phase 1 does not build a separate detailed error state machine.
 
-| PV | Type | Purpose |
+### Temperature readbacks
+
+| PV | Access | Meaning |
 |---|---|---|
-| `Input:A:TEMP_RBV` | ai | Input A temperature |
-| `Input:B:TEMP_RBV` | ai | Input B temperature |
-| `Input:C:TEMP_RBV` | ai | Input C temperature |
-| `Input:D:TEMP_RBV` | ai | Input D temperature |
-| `ColdHead:INPUT` | mbbo | Software source mapping, A-D |
-| `ColdHead:TEMP_RBV` | ai | Temperature selected by `ColdHead:INPUT` |
-| `Sample:INPUT` | mbbo | Software source mapping, A-D |
-| `Sample:TEMP_RBV` | ai | Temperature selected by `Sample:INPUT` |
+| `Input:A:TEMP_RBV` | read | Input A temperature |
+| `Input:B:TEMP_RBV` | read | Input B temperature |
+| `Input:C:TEMP_RBV` | read | Input C temperature |
+| `Input:D:TEMP_RBV` | read | Input D temperature |
+| `ColdHead:TEMP_RBV` | read | Compatibility alias for Input A |
+| `Sample:TEMP_RBV` | read | Compatibility alias for Input B |
 
-`ColdHead:INPUT` and `Sample:INPUT` do not send hardware commands. Startup macros initialize them to A and B. Runtime persistence through autosave is outside Phase 1.
+Cold-head and sample mappings remain fixed to A and B in Phase 1. Runtime mapping controls are deferred.
 
-### Loop 1 staged commands
+### Loop 1
 
-| PV | Type | Validation |
+| PV | Access | Meaning |
 |---|---|---|
-| `Loop1:CTRL:ENABLE` | bo | Defaults to Off on every IOC start |
-| `Loop1:INPUT` | mbbo | A-D |
-| `Loop1:SETP` | ao | 0-350 K |
-| `Loop1:RAMP:ENABLE` | bo | Off or On |
-| `Loop1:RAMP:RATE` | ao | 0-10 K/min |
-| `Loop1:RANGE` | mbbo | Off, Low, Medium, or High |
-| `Loop1:APPLY` | bo | Triggers one guarded transaction |
+| `Loop1:INPUT_RBV` | read | Control input parsed from `CSET? 1` |
+| `Loop1:SETP` | write | Setpoint command, 0-350 K |
+| `Loop1:SETP_RBV` | read | Setpoint from `SETP? 1` |
+| `Loop1:RAMP:ENABLE` | write | Ramp Off/On command |
+| `Loop1:RAMP:ENABLE_RBV` | read | Ramp state from `RAMP? 1` |
+| `Loop1:RAMP:RATE` | write | Ramp rate command, 0-10 K/min |
+| `Loop1:RAMP:RATE_RBV` | read | Ramp rate from `RAMP? 1` |
+| `Loop1:RANGE` | write | Heater range command |
+| `Loop1:RANGE_RBV` | read | Heater range from `RANGE? 1` |
+| `Loop1:HTR_RBV` | read | Heater output percentage |
+| `Loop1:PID:P_RBV` | read | PID proportional readback |
+| `Loop1:PID:I_RBV` | read | PID integral readback |
+| `Loop1:PID:D_RBV` | read | PID derivative readback |
 
-These command PVs are staging values. Writing them never talks to the instrument. Only `Loop1:APPLY` may cause hardware writes.
+`Loop1:INPUT` is not writable in Phase 1. Changing the input requires preserving other `CSET` fields and is not needed for routine remote temperature control.
 
-`Loop1:CTRL:ENABLE` remains enabled until explicitly disabled or the IOC restarts. It is not persisted.
-
-### Loop 1 readbacks and transaction status
-
-| PV | Type | Purpose |
-|---|---|---|
-| `Loop1:INPUT_RBV` | mbbi | Hardware control input from `CSET? 1` |
-| `Loop1:SETP_RBV` | ai | Hardware setpoint |
-| `Loop1:RAMP:ENABLE_RBV` | bi | Hardware ramp state |
-| `Loop1:RAMP:RATE_RBV` | ai | Hardware ramp rate |
-| `Loop1:RANGE_RBV` | mbbi | Hardware heater range |
-| `Loop1:HTR_RBV` | ai | Heater output percentage |
-| `Loop1:PID:P_RBV` | ai | PID proportional readback |
-| `Loop1:PID:I_RBV` | ai | PID integral readback |
-| `Loop1:PID:D_RBV` | ai | PID derivative readback |
-| `Loop1:APPLY:STATE` | mbbi | Transaction state |
-| `Loop1:APPLY:MSG` | stringin | Human-readable result |
-
-`Loop1:APPLY:STATE` values are:
-
-1. `Idle`
-2. `Busy`
-3. `Success`
-4. `Disabled`
-5. `Rejected`
-6. `Mismatch`
-7. `Error`
-
-PID writes, sensor curves, alarm configuration, and outputs 2-4 are excluded from Phase 1. PID maintenance continues through the direct tool with the IOC stopped.
-
-Internal StreamDevice hardware-write records are implementation details and are not part of the supported public PV API.
-
-## APPLY Transaction
-
-The IOC uses an EPICS Sequencer SNL program as the transaction coordinator. The setup process adds the EPICS Sequencer module as an explicit dependency.
-
-When `Loop1:APPLY` is processed:
-
-1. Reject the request if another transaction is `Busy`.
-2. Snapshot all staged command PVs.
-3. Require `CTRL:ENABLE=On`.
-4. Require valid input, setpoint, ramp, and range values.
-5. Require instrument communication to be healthy.
-6. Set state to `Busy` and clear the prior message.
-7. Send hardware commands with 150 ms between commands:
-   - Requested range Off: send `RANGE 1,0` first.
-   - Send `CSET 1,<input>,1,1`.
-   - Send `RAMP 1,<enable>,<rate>`.
-   - Send `SETP 1,<setpoint>`.
-   - Requested range Low/Medium/High: send `RANGE 1,<range>` last.
-8. Wait 500 ms, then force fresh readback processing.
-9. Compare input, ramp enable, and range exactly.
-10. Compare setpoint within 0.01 K and ramp rate within 0.001 K/min.
-11. Publish `Success`, `Mismatch`, or `Error` and a diagnostic message.
-12. Return `Loop1:APPLY` to zero.
-
-No automatic command retry occurs after a communication failure because the instrument may have accepted only part of the transaction. Staged values remain unchanged so the operator can inspect and deliberately retry.
-
-## Communication and Alarms
-
-- All required readbacks scan every two seconds.
-- Startup status is `Unknown`.
-- Status becomes `Connected` only after required readbacks complete without communication alarms.
-- A read timeout or StreamDevice failure sets the affected record alarm and `COMM:STATUS=Error`.
-- `ERR` and `APPLY:MSG` identify disabled control, validation rejection, readback mismatch, and communication failure.
-- IOC restart resets `CTRL:ENABLE=Off`, `APPLY:STATE=Idle`, and clears any in-progress transaction.
-- Ethernet migration preserves CR/LF command termination and the existing Lake Shore command set.
-
-## Access Security
-
-Development startup may use permissive access. Production includes an EPICS Access Security file:
-
-- All permitted beamline clients may read public PVs.
-- Only approved hosts/users may write software mappings and staged command PVs.
-- `CTRL:ENABLE` and `APPLY` use the restricted control group.
-- Internal hardware-write records are not remotely writable.
-- The repository's production template denies remote control writes by default and permits localhost commissioning only. Deployment must supply the beamline host/user allowlist before remote control is enabled.
-
-Access Security complements instrument limits and beamline interlocks; it does not replace them.
-
-## Temporary EPICS CSV Logger
-
-The current archive behavior becomes a separate Python EPICS client service:
-
-- It reads PVs only and has no serial or socket device client.
-- It writes one coherent snapshot every two seconds while the IOC is connected.
-- On connection loss it writes one transition row with blank numeric values and `comm=Disconnected`, then resumes normal rows after reconnection.
-- Daily filenames use Beijing dates.
-- CSV contains only `timestamp_local` with an explicit `+08:00` offset.
-- Metadata records timezone, PV prefix, IOC endpoint, software version, schema, sessions, and connection transitions.
-
-CSV fields are:
+### Enumerations
 
 ```text
-timestamp_local
-cold_head_K
-sample_K
-input_a_K
-input_b_K
-input_c_K
-input_d_K
-control_input
-setpoint_K
-ramp_enable
-ramp_rate_K_per_min
-heater_range
-heater_percent
-pid_p
-pid_i
-pid_d
-comm
-apply_state
-stable_state
+RAMP enable:
+0 = Off
+1 = On
+
+Heater range:
+0 = Off
+1 = Low
+2 = Medium
+3 = High
 ```
 
-Before appending, the logger compares the existing header with the current schema. If it differs, it creates the next available versioned pair, such as:
+EPICS labels and instrument command integers use the same mapping.
+
+## Command and Readback Semantics
+
+There is no `APPLY`, `CTRL:ENABLE`, SNL program, or transaction state machine.
+
+- Processing `Loop1:SETP` immediately sends `SETP 1,<value>`.
+- Processing `Loop1:RANGE` immediately sends `RANGE 1,<value>`.
+- Processing either RAMP command first queries `RAMP? 1`, preserves the other current hardware field, then sends one complete `RAMP 1,<enable>,<rate>` command.
+- Every public command has a separate hardware readback.
+- Command values are never copied into `_RBV` records.
+- A successful `caput` means the output record completed. The corresponding `_RBV` is the only confirmation of hardware state.
+
+### RAMP implementation
+
+The RAMP query and write occur in one StreamDevice protocol execution:
 
 ```text
-ls336_temperature_20260701_v2.csv
-ls336_temperature_20260701_v2.meta.json
+write rate:
+RAMP? 1 -> store current enable in an internal soft cache
+          -> RAMP 1,<cached enable>,<new rate>
+
+write enable:
+RAMP? 1 -> store current rate in an internal soft cache
+          -> RAMP 1,<new enable>,<cached rate>
 ```
 
-It never appends rows to an incompatible schema. Archiver Appliance can later replace this temporary service without changing the IOC PV contract.
+StreamDevice locks the asyn device from the first `out` until the protocol terminates, preventing another record from inserting a command between query and write. Input redirection writes the preserved field to an internal passive soft record.
 
-## Testing and Acceptance
+The first implementation task is a minimal RAMP protocol prototype that verifies:
 
-### Static and unit tests
+- Query parsing into the internal cache.
+- Active output-record value formatting.
+- Floating-point command formatting accepted by the Model 336.
+- No command interleaving on the shared asyn port.
 
-- Required public PVs and exclusions.
-- StreamDevice commands and parsers for `KRDG?`, `CSET?`, `SETP?`, `RAMP?`, `RANGE?`, `PID?`, and `HTR?`.
-- Limit validation and access-security declarations.
-- Logger field order, Beijing timestamps, schema migration, disconnect transitions, and metadata.
+## Polling and Startup
 
-### IOC integration with mock instrument
+| Data | Scan period |
+|---|---|
+| A-D temperature | 2 seconds |
+| Control input, setpoint, ramp, range, heater output | 2 seconds |
+| PID readbacks | 10 seconds |
+| IDN | 10 seconds |
 
-A Linux pseudo-terminal mock implements the Model 336 command subset and records every received command.
+Startup behavior:
 
-Verify:
+- All output records use `PINI=NO`.
+- IOC startup performs queries only.
+- IOC startup never sends `SETP`, `RAMP`, or `RANGE`.
+- An output protocol may use a read-only `@init` handler to initialize its displayed command value.
+- An `@init` result does not process the output record.
+- `_RBV` records remain authoritative.
 
-- A-D temperatures and all Loop 1 readbacks.
-- No hardware writes while disabled or rejected.
-- Exact command order and 150 ms minimum spacing.
-- Range Off occurs first; nonzero range occurs last.
-- Success after matching readbacks.
-- Mismatch after deliberately stale or altered readbacks.
-- Error and no retry after an injected timeout.
-- Communication alarms recover after reconnection.
+## Limits and Write Failures
 
-### Hardware commissioning over USB
+- Setpoint accepts 0-350 K.
+- Ramp rate accepts 0-10 K/min.
+- Range accepts only Off, Low, Medium, or High.
+- Out-of-range numeric commands enter an invalid alarm state and do not drive device output.
+- StreamDevice timeout, write, read, disconnect, or parse failures set the public output record to `SEVR=INVALID` with the corresponding `STAT`.
+- Readback records retain their last value or enter their own communication alarm based on the next hardware query.
 
-- Compare all A-D readings and Loop 1 readbacks with the front panel.
-- Confirm staged PV writes alone cause no hardware change.
-- Apply a beamline-approved safe transaction.
-- Verify readbacks and front-panel values.
-- Test range Off before any real heating test.
-- Disconnect USB and verify alarms, status, error message, logger transition, and recovery.
-- Confirm the direct ZIP cannot be used operationally until the IOC is stopped.
+The implementation must test both boundary values and values immediately outside each boundary.
 
-### Deployment rehearsal
+## Communication Status
 
-- Build and run the same IOC on a Linux host.
-- Apply the production prefix and Access Security file.
-- Run Channel Access checks from another beamline computer.
-- Verify the CSV logger can run independently of the IOC process.
+Required readbacks for overall communication status are:
 
-Phase 2 starts only after all USB acceptance checks pass. Ethernet acceptance repeats the same PV and transaction tests against `IP:7777`; no client-facing PV changes are allowed.
+- `IDN`
+- Input A-D temperatures
+- `Loop1:INPUT_RBV`
+- `Loop1:SETP_RBV`
+- RAMP enable and rate
+- Heater range
+- Heater output
 
-## Implementation Boundaries
+PID readback alarms do not change overall communication status.
 
-Phase 1 modifies the IOC database, protocol, startup/build configuration, adds the SNL transaction coordinator, adds a mock instrument, and converts logging to an EPICS client.
+State rules:
 
-It does not build a unified beamline UI, integrate unrelated beamline hardware, deploy Archiver Appliance, persist configuration through autosave, or expose high-risk PID/curve/alarm writes.
+- `Disconnected`: IDN has no valid communication.
+- `Connected`: IDN and all required readbacks are valid.
+- `Error`: IDN is valid but at least one required readback is in alarm.
 
-## Assumptions
+After USB removal, a short `Connected -> Error -> Disconnected` transition is acceptable. No failure counters, acknowledgement, or recovery state machine are added. Normal asyn auto-connect and periodic scans provide recovery after reconnection.
 
-- Phase 1 controls Loop 1 only.
-- Input readings and staged setpoints use kelvin.
-- Existing 350 K and 10 K/min software limits remain the approved commissioning defaults.
-- The Model 336 firmware supports the documented `KRDG?`, `CSET`, `SETP`, `RAMP`, `RANGE`, `PID`, and `HTR` commands.
-- EPICS Base, asyn, StreamDevice, and EPICS Sequencer are installed under the existing `/opt/epics` support layout.
-- Production supplies the final PV prefix, Ethernet address, and Access Security allowlist without changing the public PV contract.
+## Tests and Acceptance
+
+### Offline repository tests
+
+- Required PV names, access direction, record types, scan periods, and enum mappings.
+- Protocol commands for IDN, A-D, CSET readback, setpoint, RAMP, range, heater output, and PID.
+- RAMP query-preserve-write protocol structure.
+- Output records use `PINI=NO`.
+- No SNL, `APPLY`, `CTRL:ENABLE`, PID write, or control-input write.
+- Numeric limits and no-output behavior for invalid values.
+- Serial startup remains 57600 baud, 7 data bits, odd parity, one stop bit.
+
+### IOC build checks
+
+- EPICS Base, asyn, and StreamDevice build without adding new support modules.
+- IOC executable and DBD are generated.
+- Startup loads the expanded database and protocol.
+
+### USB hardware acceptance
+
+1. Start the IOC and confirm no control command is sent during startup.
+2. Verify IDN and A-D temperatures against the controller front panel.
+3. Verify control input, setpoint, RAMP, range, heater output, and PID readbacks.
+4. Write a beamline-approved safe setpoint and confirm `SETP_RBV`.
+5. Change RAMP rate and verify enable remains unchanged.
+6. Change RAMP enable and verify rate remains unchanged.
+7. Switch range through Off, Low, Medium, and High only under approved hardware conditions.
+8. Verify values at 0/350 K and 0/10 K/min boundaries.
+9. Verify out-of-range values do not send hardware commands.
+10. Unplug USB and verify record alarms and communication status.
+11. Reconnect USB and verify periodic scans recover.
+12. Confirm the direct ZIP/logger is operational only after stopping the IOC.
+
+## Deferred Work
+
+Phase 1 explicitly excludes:
+
+- Writable control input.
+- PID, sensor curve, alarm, or outputs 2-4 configuration.
+- SNL, grouped APPLY transactions, software interlocks, and stability logic.
+- EPICS Access Security.
+- EPICS CSV logging and Archiver Appliance.
+- Unified Phoebus, CSS, Python, or web UI.
+- Linux production deployment.
+- Ethernet transport.
+
+The next transport phase replaces `drvAsynSerialPortConfigure` with `drvAsynIPPortConfigure` for Model 336 TCP port 7777. Public PV names, database semantics, and client behavior remain unchanged.
