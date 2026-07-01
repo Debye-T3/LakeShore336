@@ -54,7 +54,7 @@ Detailed timeout, write, read, disconnect, and parse failures are exposed throug
 | `ColdHead:TEMP_RBV` | read | Compatibility alias for Input A |
 | `Sample:TEMP_RBV` | read | Compatibility alias for Input B |
 
-Cold-head and sample mappings remain fixed to A and B in Phase 1. Runtime mapping controls are deferred.
+`ColdHead:TEMP_RBV` and `Sample:TEMP_RBV` are true EPICS record aliases of the A and B records. They do not create independent records or additional `KRDG?` queries. Runtime mapping controls are deferred.
 
 ### Loop 1
 
@@ -119,6 +119,8 @@ RAMP? 1 -> store current rate in an internal soft cache
 
 StreamDevice locks the asyn device from the first `out` until the protocol terminates, preventing another record from inserting a command between query and write. Input redirection writes the preserved field to an internal passive soft record.
 
+The internal RAMP cache exists only for the active query-preserve-write operation. It is not a public PV, is not archived, and never updates or replaces `RAMP:ENABLE_RBV` or `RAMP:RATE_RBV`.
+
 The first implementation task is a minimal RAMP protocol prototype that verifies:
 
 - Query parsing into the internal cache.
@@ -149,11 +151,15 @@ Startup behavior:
 - Setpoint accepts 0-350 K.
 - Ramp rate accepts 0-10 K/min.
 - Range accepts only Off, Low, Medium, or High.
-- Out-of-range numeric commands enter an invalid alarm state and do not drive device output.
+- Each numeric public command is the StreamDevice output record. Its `SDIS` link processes a passive validation record whose expression rejects values outside the closed interval exactly.
+- The validation record reads the command's `VAL` through an `NPP` link, so checking `SDIS` does not recursively process the output record.
+- Numeric command records use `LOPR/HOPR` as client display metadata and deliberately omit active `DRVL/DRVH` clamping.
+- A valid value leaves the output record enabled. An invalid value updates the error-summary path and disables the output record before record support runs.
+- Invalid numeric commands therefore produce `DISABLE/INVALID` on the public command record without calling StreamDevice device support.
 - StreamDevice timeout, write, read, disconnect, or parse failures set the public output record to `SEVR=INVALID` with the corresponding `STAT`.
 - Readback records retain their last value or enter their own communication alarm based on the next hardware query.
 
-The implementation must test both boundary values and values immediately outside each boundary.
+`DRVH/DRVL` alone are not a safety guard because EPICS `ao` conversion clamps an out-of-range value before downstream validation. The implementation must test both boundary values and values immediately outside each boundary and must inspect the mock serial command log.
 
 ## Communication Status
 
@@ -182,11 +188,13 @@ After USB removal, a short `Connected -> Error -> Disconnected` transition is ac
 ### Offline repository tests
 
 - Required PV names, access direction, record types, scan periods, and enum mappings.
+- `ColdHead:TEMP_RBV` and `Sample:TEMP_RBV` are aliases and do not add protocol transactions.
 - Protocol commands for IDN, A-D, CSET readback, setpoint, RAMP, range, heater output, and PID.
 - RAMP query-preserve-write protocol structure.
+- Internal RAMP caches are not public readbacks.
 - Output records use `PINI=NO`.
 - No SNL, `APPLY`, `CTRL:ENABLE`, PID write, or control-input write.
-- Numeric limits and no-output behavior for invalid values.
+- Numeric boundaries, `DISABLE/INVALID` alarms, error-summary updates, and absence of invalid commands in the mock serial log.
 - Serial startup remains 57600 baud, 7 data bits, odd parity, one stop bit.
 
 ### IOC build checks
@@ -209,6 +217,23 @@ After USB removal, a short `Connected -> Error -> Disconnected` transition is ac
 10. Unplug USB and verify record alarms and communication status.
 11. Reconnect USB and verify periodic scans recover.
 12. Confirm the direct ZIP/logger is operational only after stopping the IOC.
+
+The serial settings above come from the already validated direct-control project and must not be changed to 8N1 during IOC migration.
+
+## Implementation Order
+
+1. Confirm asyn USB configuration and `*IDN?`.
+2. Add A-D temperature readbacks and true A/B compatibility aliases.
+3. Add setpoint readback, exact limit guard, and write.
+4. Add range readback and write.
+5. Add heater output and control-input readbacks.
+6. Add ordinary RAMP readbacks.
+7. Build and verify the minimal RAMP query-preserve-write prototype.
+8. Add PID readbacks.
+9. Add communication status and the short `ERR` summary.
+10. Test numeric boundaries and prove invalid commands never reach the mock serial log.
+11. Test USB removal and automatic reconnection.
+12. Run the complete hardware acceptance checklist.
 
 ## Deferred Work
 
