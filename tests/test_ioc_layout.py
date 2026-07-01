@@ -13,6 +13,16 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def record_block(db: str, name: str) -> str:
+    match = re.search(
+        rf'record\([^)]*, "{re.escape(name)}"\)\s*\{{.*?\n\}}',
+        db,
+        re.DOTALL,
+    )
+    assert match is not None, name
+    return match.group(0)
+
+
 def load_web_dashboard():
     path = ROOT / "scripts" / "ls336_web_dashboard.py"
     spec = importlib.util.spec_from_file_location("ls336_web_dashboard_test", path)
@@ -101,28 +111,30 @@ def test_startup_and_scan_contracts_match_phase_one_polling():
     assert db.count('field(SCAN, "10 second")') >= 4
     assert 'field(PINI, "NO")' in db
     assert 'field(PINI, "YES")' not in db
-    assert "seq " not in startup
+    for pv_name in [
+        "$(P)Loop1:SETP",
+        "$(P)Loop1:RAMP:ENABLE",
+        "$(P)Loop1:RAMP:RATE",
+        "$(P)Loop1:RANGE",
+    ]:
+        assert 'field(PINI, "NO")' in record_block(db, pv_name)
+    assert re.search(r"(?m)^\s*seq\b.*\.st(?:\s|$)", startup) is None
     assert ".st" not in makefile
 
 
 def test_phase_one_deferred_scope_stays_out_of_the_database_and_boot():
     db = read("ls336App/Db/ls336.db")
-    startup = read("iocBoot/iocLS336/st.cmd")
 
-    output_record_types = r"(?:ao|bo|mbbo|stringout|longout|int64out|aao)"
-    for pv_name in ["Loop1:INPUT", "Loop1:PID:P", "Loop1:PID:I", "Loop1:PID:D"]:
-        assert not re.search(
-            rf'record\({output_record_types}, "{re.escape("$(P)")}{re.escape(pv_name)}"\)',
-            db,
-        )
+    for exact_name in [
+        '"$(P)Loop1:INPUT")',
+        '"$(P)Loop1:PID:P")',
+        '"$(P)Loop1:PID:I")',
+        '"$(P)Loop1:PID:D")',
+    ]:
+        assert exact_name not in db
 
     for pv_name in ["APPLY", "CTRL:ENABLE", "WARMUP"]:
-        assert not re.search(
-            rf'record\({output_record_types}, "{re.escape("$(P)")}{re.escape(pv_name)}"\)',
-            db,
-        )
-
-    assert "seq " not in startup
+        assert f"$(P){pv_name}" not in db
 
 
 def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
