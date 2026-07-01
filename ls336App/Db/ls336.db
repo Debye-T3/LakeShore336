@@ -55,53 +55,6 @@ record(mbbi, "$(P)Loop1:INPUT_RBV") {
     field(SCAN, "2 second")
 }
 
-record(ao, "$(P)Loop1:SETP") {
-    field(DESC, "Loop 1 setpoint command")
-    field(EGU,  "K")
-    field(PREC, "3")
-    field(DRVL, "0")
-    field(DRVH, "350")
-    field(LOPR, "0")
-    field(HOPR, "350")
-    field(PINI, "NO")
-    field(FLNK, "$(P)Loop1:SETP:VALIDATE")
-}
-
-record(calcout, "$(P)Loop1:SETP:VALIDATE") {
-    field(DESC, "validate_setpoint")
-    field(INPA, "$(P)Loop1:SETP NPP NMS")
-    field(CALC, "A>=0&&A<=350")
-    field(OOPT, "When Non-zero")
-    field(OUT,  "$(P)Loop1:SETP:WRITE.PROC PP")
-    field(FLNK, "$(P)Loop1:SETP:INVALID")
-}
-
-record(calcout, "$(P)Loop1:SETP:INVALID") {
-    field(DESC, "setpoint limit violation")
-    field(INPA, "$(P)Loop1:SETP NPP NMS")
-    field(CALC, "A<0||A>350")
-    field(OOPT, "When Non-zero")
-    field(OUT,  "$(P)ERR:SETP.PROC PP")
-}
-
-record(stringout, "$(P)ERR:SETP") {
-    field(DESC, "setpoint validation message")
-    field(VAL,  "Setpoint must be within 0..350 K")
-    field(OUT,  "$(P)ERR PP")
-}
-
-record(ao, "$(P)Loop1:SETP:WRITE") {
-    field(DESC, "Loop 1 setpoint hardware write")
-    field(DTYP, "stream")
-    field(OUT,  "@ls336.proto setSetpoint $(PORT)")
-    field(DOL,  "$(P)Loop1:SETP NPP NMS")
-    field(OMSL, "closed_loop")
-    field(EGU,  "K")
-    field(PREC, "3")
-    field(DRVL, "0")
-    field(DRVH, "350")
-}
-
 record(ai, "$(P)Loop1:SETP_RBV") {
     field(DESC, "Loop 1 setpoint readback")
     field(DTYP, "stream")
@@ -111,14 +64,6 @@ record(ai, "$(P)Loop1:SETP_RBV") {
     field(SCAN, "2 second")
 }
 
-record(bo, "$(P)Loop1:RAMP:ENABLE") {
-    field(DESC, "Loop 1 ramp enable command")
-    field(ZNAM, "Off")
-    field(ONAM, "On")
-    field(PINI, "NO")
-    field(FLNK, "$(P)Loop1:RAMP:WRITE")
-}
-
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
     field(DESC, "Loop 1 ramp enable readback")
     field(DTYP, "stream")
@@ -126,53 +71,6 @@ record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
     field(ZNAM, "Off")
     field(ONAM, "On")
     field(SCAN, "2 second")
-}
-
-record(ao, "$(P)Loop1:RAMP:RATE") {
-    field(DESC, "Loop 1 ramp rate command")
-    field(EGU,  "K/min")
-    field(PREC, "3")
-    field(DRVL, "0")
-    field(DRVH, "10")
-    field(LOPR, "0")
-    field(HOPR, "10")
-    field(PINI, "NO")
-    field(FLNK, "$(P)Loop1:RAMP:RATE:VALIDATE")
-}
-
-record(calcout, "$(P)Loop1:RAMP:RATE:VALIDATE") {
-    field(DESC, "validate_ramp_rate")
-    field(INPA, "$(P)Loop1:RAMP:RATE NPP NMS")
-    field(CALC, "A>=0&&A<=10")
-    field(OOPT, "When Non-zero")
-    field(OUT,  "$(P)Loop1:RAMP:WRITE.PROC PP")
-    field(FLNK, "$(P)Loop1:RAMP:RATE:INVALID")
-}
-
-record(calcout, "$(P)Loop1:RAMP:RATE:INVALID") {
-    field(DESC, "ramp rate limit violation")
-    field(INPA, "$(P)Loop1:RAMP:RATE NPP NMS")
-    field(CALC, "A<0||A>10")
-    field(OOPT, "When Non-zero")
-    field(OUT,  "$(P)ERR:RAMP.PROC PP")
-}
-
-record(stringout, "$(P)ERR:RAMP") {
-    field(DESC, "ramp validation message")
-    field(VAL,  "Ramp rate must be within 0..10 K/min")
-    field(OUT,  "$(P)ERR PP")
-}
-
-record(ao, "$(P)Loop1:RAMP:WRITE") {
-    field(DESC, "Loop 1 ramp hardware write")
-    field(DTYP, "stream")
-    field(OUT,  "@ls336.proto setRamp($(P)) $(PORT)")
-    field(DOL,  "$(P)Loop1:RAMP:RATE NPP NMS")
-    field(OMSL, "closed_loop")
-    field(EGU,  "K/min")
-    field(PREC, "3")
-    field(DRVL, "0")
-    field(DRVH, "10")
 }
 
 record(ai, "$(P)Loop1:RAMP:RATE_RBV") {

@@ -69,6 +69,29 @@ def test_database_exposes_simplified_phase_one_pvs():
     assert 'record(ai, "$(P)Sample:TEMP_RBV")' not in db
 
 
+def test_phase_one_readback_enums_use_approved_labels():
+    db = read("ls336App/Db/ls336.db")
+
+    input_block = record_block(db, "$(P)Loop1:INPUT_RBV")
+    for snippet in [
+        'field(ZRST, "None")',
+        'field(ONST, "A")',
+        'field(TWST, "B")',
+        'field(THST, "C")',
+        'field(FRST, "D")',
+    ]:
+        assert snippet in input_block
+
+    range_block = record_block(db, "$(P)Loop1:RANGE_RBV")
+    for snippet in [
+        'field(ZRST, "Off")',
+        'field(ONST, "Low")',
+        'field(TWST, "Medium")',
+        'field(THST, "High")',
+    ]:
+        assert snippet in range_block
+
+
 def test_protocol_covers_phase_one_queries_writes_and_omits_init():
     proto = read("ls336App/protocol/ls336.proto")
 
