@@ -60,7 +60,7 @@ Detailed timeout, write, read, disconnect, and parse failures are exposed throug
 
 | PV | Access | Meaning |
 |---|---|---|
-| `Loop1:INPUT_RBV` | read | Control input parsed from `CSET? 1` |
+| `Loop1:INPUT_RBV` | read | Control input parsed from `OUTMODE? 1` |
 | `Loop1:SETP` | write | Setpoint command, 0-350 K |
 | `Loop1:SETP_RBV` | read | Setpoint from `SETP? 1` |
 | `Loop1:RAMP:ENABLE` | write | Ramp Off/On command |
@@ -74,7 +74,7 @@ Detailed timeout, write, read, disconnect, and parse failures are exposed throug
 | `Loop1:PID:I_RBV` | read | PID integral readback |
 | `Loop1:PID:D_RBV` | read | PID derivative readback |
 
-`Loop1:INPUT` is not writable in Phase 1. Changing the input requires preserving other `CSET` fields and is not needed for routine remote temperature control.
+`Loop1:INPUT` is not writable in Phase 1. `OUTMODE? 1` returns `<mode>,<input>,<powerup enable>`; Phase 1 parses only the input field. Changing the input requires preserving the other `OUTMODE` fields and is not needed for routine remote temperature control.
 
 ### Enumerations
 
@@ -189,7 +189,7 @@ After USB removal, a short `Connected -> Error -> Disconnected` transition is ac
 
 - Required PV names, access direction, record types, scan periods, and enum mappings.
 - `ColdHead:TEMP_RBV` and `Sample:TEMP_RBV` are aliases and do not add protocol transactions.
-- Protocol commands for IDN, A-D, CSET readback, setpoint, RAMP, range, heater output, and PID.
+- Protocol commands for IDN, A-D, OUTMODE control-input readback, setpoint, RAMP, range, heater output, and PID.
 - RAMP query-preserve-write protocol structure.
 - Internal RAMP caches are not public readbacks.
 - Output records use `PINI=NO`.
