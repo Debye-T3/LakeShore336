@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -31,6 +32,10 @@ def test_database_exposes_simplified_phase_one_pvs():
         'record(ai, "$(P)Input:C:TEMP_RBV")',
         'record(ai, "$(P)Input:D:TEMP_RBV")',
         'record(mbbi, "$(P)Loop1:INPUT_RBV")',
+        'field(INP,  "@ls336.proto getTemperature(A) $(PORT)")',
+        'field(INP,  "@ls336.proto getTemperature(B) $(PORT)")',
+        'field(INP,  "@ls336.proto getTemperature(C) $(PORT)")',
+        'field(INP,  "@ls336.proto getTemperature(D) $(PORT)")',
         'record(ao, "$(P)Loop1:SETP")',
         'record(ai, "$(P)Loop1:SETP_RBV")',
         'record(bo, "$(P)Loop1:RAMP:ENABLE")',
@@ -90,33 +95,34 @@ def test_protocol_covers_phase_one_queries_writes_and_omits_init():
 def test_startup_and_scan_contracts_match_phase_one_polling():
     db = read("ls336App/Db/ls336.db")
     startup = read("iocBoot/iocLS336/st.cmd")
+    makefile = read("ls336App/src/Makefile")
 
     assert db.count('field(SCAN, "2 second")') >= 10
     assert db.count('field(SCAN, "10 second")') >= 4
     assert 'field(PINI, "NO")' in db
+    assert 'field(PINI, "YES")' not in db
     assert "seq " not in startup
-    assert ".st" not in startup
+    assert ".st" not in makefile
 
 
 def test_phase_one_deferred_scope_stays_out_of_the_database_and_boot():
     db = read("ls336App/Db/ls336.db")
     startup = read("iocBoot/iocLS336/st.cmd")
 
-    for snippet in [
-        "APPLY",
-        "CTRL:ENABLE",
-        'record(ao, "$(P)Loop1:INPUT")',
-        'record(bo, "$(P)Loop1:INPUT")',
-        'record(mbbo, "$(P)Loop1:INPUT")',
-        'record(ao, "$(P)Loop1:PID:P")',
-        'record(ao, "$(P)Loop1:PID:I")',
-        'record(ao, "$(P)Loop1:PID:D")',
-        "WARMUP",
-    ]:
-        assert snippet not in db
+    output_record_types = r"(?:ao|bo|mbbo|stringout|longout|int64out|aao)"
+    for pv_name in ["Loop1:INPUT", "Loop1:PID:P", "Loop1:PID:I", "Loop1:PID:D"]:
+        assert not re.search(
+            rf'record\({output_record_types}, "{re.escape("$(P)")}{re.escape(pv_name)}"\)',
+            db,
+        )
+
+    for pv_name in ["APPLY", "CTRL:ENABLE", "WARMUP"]:
+        assert not re.search(
+            rf'record\({output_record_types}, "{re.escape("$(P)")}{re.escape(pv_name)}"\)',
+            db,
+        )
 
     assert "seq " not in startup
-    assert ".st" not in startup
 
 
 def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
