@@ -135,3 +135,38 @@ def test_mock_server_processes_commands_and_logs_jsonl(tmp_path):
     assert entries[3]["command"] == "BOGUS"
     assert "error" in entries[3]
     assert entries[3]["response"] is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY server requires POSIX")
+def test_mock_server_exits_cleanly_when_slave_disconnects():
+    process = subprocess.Popen(
+        [sys.executable, str(MOCK_PATH)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    try:
+        assert process.stdout is not None
+        slave_path = process.stdout.readline().strip()
+        assert slave_path
+
+        fd = os.open(slave_path, os.O_RDWR | os.O_NOCTTY)
+        os.write(fd, b"\r\n")
+        os.close(fd)
+
+        try:
+            return_code = process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait(timeout=5)
+            pytest.fail("Mock PTY server did not exit after slave disconnect")
+
+        _, stderr_text = process.communicate(timeout=1)
+        assert return_code == 0
+        assert "Traceback" not in stderr_text
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)

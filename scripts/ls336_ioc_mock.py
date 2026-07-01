@@ -2,12 +2,14 @@
 """Pseudo-terminal Lake Shore 336 emulator for IOC integration tests."""
 
 import argparse
+import errno
 import json
 import os
 import re
 import select
 import signal
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -135,6 +137,7 @@ def serve_pty(command_log: Path | None = None) -> int:
     running = True
     log_handle = None
     buffer = ""
+    saw_slave_activity = False
 
     def stop(_signum, _frame) -> None:
         nonlocal running
@@ -145,6 +148,9 @@ def serve_pty(command_log: Path | None = None) -> int:
         attributes = termios.tcgetattr(slave_fd)
         attributes[3] &= ~(termios.ECHO | termios.ICANON)
         termios.tcsetattr(slave_fd, termios.TCSANOW, attributes)
+        slave_path = os.ttyname(slave_fd)
+        os.close(slave_fd)
+        slave_fd = None
 
         if command_log is not None:
             command_log.parent.mkdir(parents=True, exist_ok=True)
@@ -153,17 +159,28 @@ def serve_pty(command_log: Path | None = None) -> int:
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
 
-        print(os.ttyname(slave_fd), flush=True)
+        print(slave_path, flush=True)
 
         while running:
-            ready, _, _ = select.select([master_fd], [], [], 0.2)
-            if not ready:
-                continue
+            try:
+                ready, _, _ = select.select([master_fd], [], [], 0.2)
+                if not ready:
+                    continue
 
-            chunk = os.read(master_fd, 1024)
+                chunk = os.read(master_fd, 1024)
+            except OSError as exc:
+                if exc.errno == errno.EIO and saw_slave_activity:
+                    break
+                if exc.errno == errno.EIO:
+                    time.sleep(0.05)
+                    continue
+                if exc.errno == errno.EBADF and not running:
+                    break
+                raise
             if not chunk:
                 continue
 
+            saw_slave_activity = True
             buffer += chunk.decode("utf-8", errors="replace")
             commands, buffer = _drain_commands(buffer)
             for raw_command in commands:
@@ -185,7 +202,8 @@ def serve_pty(command_log: Path | None = None) -> int:
         if log_handle is not None:
             log_handle.close()
         os.close(master_fd)
-        os.close(slave_fd)
+        if slave_fd is not None:
+            os.close(slave_fd)
 
     return 0
 
