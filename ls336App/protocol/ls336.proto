@@ -8,14 +8,14 @@ getIDN {
     in "%39c";
 }
 
-getColdHeadTemp {
-    out "KRDG? A";
+getTemperature {
+    out "KRDG? \$1";
     in "%f";
 }
 
-getSampleTemp {
-    out "KRDG? B";
-    in "%f";
+getControlInput {
+    out "OUTMODE? 1";
+    in "%*d,%d,%*d";
 }
 
 getSetpoint {
@@ -25,7 +25,6 @@ getSetpoint {
 
 setSetpoint {
     out "SETP 1,%f";
-    @init { getSetpoint; }
 }
 
 getRampEnable {
@@ -41,10 +40,33 @@ getRampRate {
 setRamp {
     # Command shape: out "RAMP 1,%d,%f";
     out "RAMP 1,%(\$1Loop1:RAMP:ENABLE.VAL)d,%f";
-    @init { getRampRate; getRampEnable; }
+}
+
+getRange {
+    out "RANGE? 1";
+    in "%d";
+}
+
+setRange {
+    out "RANGE 1,%d";
 }
 
 getHeater {
     out "HTR? 1";
     in "%f";
+}
+
+getPidP {
+    out "PID? 1";
+    in "%f,%*f,%*f";
+}
+
+getPidI {
+    out "PID? 1";
+    in "%*f,%f,%*f";
+}
+
+getPidD {
+    out "PID? 1";
+    in "%*f,%*f,%f";
 }

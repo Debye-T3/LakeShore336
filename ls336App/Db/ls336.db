@@ -2,24 +2,56 @@ record(stringin, "$(P)IDN") {
     field(DESC, "Lake Shore 336 identity")
     field(DTYP, "stream")
     field(INP,  "@ls336.proto getIDN $(PORT)")
-    field(SCAN, "I/O Intr")
+    field(SCAN, "10 second")
 }
 
-record(ai, "$(P)ColdHead:TEMP_RBV") {
-    field(DESC, "Input A cold head temperature")
+record(ai, "$(P)Input:A:TEMP_RBV") {
+    field(DESC, "Input A temperature")
     field(DTYP, "stream")
-    field(INP,  "@ls336.proto getColdHeadTemp $(PORT)")
+    field(INP,  "@ls336.proto getTemperature(A) $(PORT)")
+    field(EGU,  "K")
+    field(PREC, "3")
+    field(SCAN, "2 second")
+}
+alias("$(P)Input:A:TEMP_RBV", "$(P)ColdHead:TEMP_RBV")
+
+record(ai, "$(P)Input:B:TEMP_RBV") {
+    field(DESC, "Input B temperature")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getTemperature(B) $(PORT)")
+    field(EGU,  "K")
+    field(PREC, "3")
+    field(SCAN, "2 second")
+}
+alias("$(P)Input:B:TEMP_RBV", "$(P)Sample:TEMP_RBV")
+
+record(ai, "$(P)Input:C:TEMP_RBV") {
+    field(DESC, "Input C temperature")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getTemperature(C) $(PORT)")
     field(EGU,  "K")
     field(PREC, "3")
     field(SCAN, "2 second")
 }
 
-record(ai, "$(P)Sample:TEMP_RBV") {
-    field(DESC, "Input B sample temperature")
+record(ai, "$(P)Input:D:TEMP_RBV") {
+    field(DESC, "Input D temperature")
     field(DTYP, "stream")
-    field(INP,  "@ls336.proto getSampleTemp $(PORT)")
+    field(INP,  "@ls336.proto getTemperature(D) $(PORT)")
     field(EGU,  "K")
     field(PREC, "3")
+    field(SCAN, "2 second")
+}
+
+record(mbbi, "$(P)Loop1:INPUT_RBV") {
+    field(DESC, "Loop 1 control input readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getControlInput $(PORT)")
+    field(ZRST, "None")
+    field(ONST, "A")
+    field(TWST, "B")
+    field(THST, "C")
+    field(FRST, "D")
     field(SCAN, "2 second")
 }
 
@@ -31,6 +63,7 @@ record(ao, "$(P)Loop1:SETP") {
     field(DRVH, "350")
     field(LOPR, "0")
     field(HOPR, "350")
+    field(PINI, "NO")
     field(FLNK, "$(P)Loop1:SETP:VALIDATE")
 }
 
@@ -82,14 +115,17 @@ record(bo, "$(P)Loop1:RAMP:ENABLE") {
     field(DESC, "Loop 1 ramp enable command")
     field(ZNAM, "Off")
     field(ONAM, "On")
+    field(PINI, "NO")
     field(FLNK, "$(P)Loop1:RAMP:WRITE")
 }
 
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
     field(DESC, "Loop 1 ramp enable readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getRampEnable $(PORT)")
     field(ZNAM, "Off")
     field(ONAM, "On")
-    field(INP,  "$(P)Loop1:RAMP:ENABLE_RBV_RAW CPP")
+    field(SCAN, "2 second")
 }
 
 record(ao, "$(P)Loop1:RAMP:RATE") {
@@ -100,6 +136,7 @@ record(ao, "$(P)Loop1:RAMP:RATE") {
     field(DRVH, "10")
     field(LOPR, "0")
     field(HOPR, "10")
+    field(PINI, "NO")
     field(FLNK, "$(P)Loop1:RAMP:RATE:VALIDATE")
 }
 
@@ -147,10 +184,25 @@ record(ai, "$(P)Loop1:RAMP:RATE_RBV") {
     field(SCAN, "2 second")
 }
 
-record(ai, "$(P)Loop1:RAMP:ENABLE_RBV_RAW") {
-    field(DESC, "Loop 1 ramp enable raw readback")
+record(mbbo, "$(P)Loop1:RANGE") {
+    field(DESC, "Loop 1 heater range command")
     field(DTYP, "stream")
-    field(INP,  "@ls336.proto getRampEnable $(PORT)")
+    field(OUT,  "@ls336.proto setRange $(PORT)")
+    field(ZRST, "Off")
+    field(ONST, "Low")
+    field(TWST, "Medium")
+    field(THST, "High")
+    field(PINI, "NO")
+}
+
+record(mbbi, "$(P)Loop1:RANGE_RBV") {
+    field(DESC, "Loop 1 heater range readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getRange $(PORT)")
+    field(ZRST, "Off")
+    field(ONST, "Low")
+    field(TWST, "Medium")
+    field(THST, "High")
     field(SCAN, "2 second")
 }
 
@@ -161,6 +213,30 @@ record(ai, "$(P)Loop1:HTR_RBV") {
     field(EGU,  "%")
     field(PREC, "2")
     field(SCAN, "2 second")
+}
+
+record(ai, "$(P)Loop1:PID:P_RBV") {
+    field(DESC, "Loop 1 PID proportional readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getPidP $(PORT)")
+    field(PREC, "3")
+    field(SCAN, "10 second")
+}
+
+record(ai, "$(P)Loop1:PID:I_RBV") {
+    field(DESC, "Loop 1 PID integral readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getPidI $(PORT)")
+    field(PREC, "3")
+    field(SCAN, "10 second")
+}
+
+record(ai, "$(P)Loop1:PID:D_RBV") {
+    field(DESC, "Loop 1 PID derivative readback")
+    field(DTYP, "stream")
+    field(INP,  "@ls336.proto getPidD $(PORT)")
+    field(PREC, "3")
+    field(SCAN, "10 second")
 }
 
 record(mbbo, "$(P)COMM:STATUS") {
@@ -177,7 +253,7 @@ record(calcout, "$(P)COMM:STATUS:CALC") {
     field(INPB, "$(P)Sample:TEMP_RBV.SEVR CP MS")
     field(INPC, "$(P)Loop1:SETP_RBV.SEVR CP MS")
     field(INPD, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")
-    field(INPE, "$(P)Loop1:RAMP:ENABLE_RBV_RAW.SEVR CP MS")
+    field(INPE, "$(P)Loop1:RAMP:ENABLE_RBV.SEVR CP MS")
     field(INPF, "$(P)Loop1:HTR_RBV.SEVR CP MS")
     field(CALC, "A>0||B>0||C>0||D>0||E>0||F>0?2:1")
     field(OOPT, "Every Time")

@@ -53,7 +53,7 @@ def test_database_exposes_simplified_phase_one_pvs():
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'record(ai, "$(P)Loop1:RAMP:RATE_RBV")',
         'record(mbbo, "$(P)Loop1:RANGE")',
-        'record(ai, "$(P)Loop1:RANGE_RBV")',
+        'record(mbbi, "$(P)Loop1:RANGE_RBV")',
         'record(ai, "$(P)Loop1:HTR_RBV")',
         'record(ai, "$(P)Loop1:PID:P_RBV")',
         'record(ai, "$(P)Loop1:PID:I_RBV")',
