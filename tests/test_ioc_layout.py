@@ -21,67 +21,123 @@ def load_web_dashboard():
     return module
 
 
-def test_database_exposes_required_public_pvs():
+def test_database_exposes_simplified_phase_one_pvs():
     db = read("ls336App/Db/ls336.db")
 
     for record in [
-        'record(ai, "$(P)ColdHead:TEMP_RBV")',
-        'record(ai, "$(P)Sample:TEMP_RBV")',
+        'record(stringin, "$(P)IDN")',
+        'record(ai, "$(P)Input:A:TEMP_RBV")',
+        'record(ai, "$(P)Input:B:TEMP_RBV")',
+        'record(ai, "$(P)Input:C:TEMP_RBV")',
+        'record(ai, "$(P)Input:D:TEMP_RBV")',
+        'record(mbbi, "$(P)Loop1:INPUT_RBV")',
         'record(ao, "$(P)Loop1:SETP")',
         'record(ai, "$(P)Loop1:SETP_RBV")',
         'record(bo, "$(P)Loop1:RAMP:ENABLE")',
         'record(bi, "$(P)Loop1:RAMP:ENABLE_RBV")',
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'record(ai, "$(P)Loop1:RAMP:RATE_RBV")',
+        'record(mbbo, "$(P)Loop1:RANGE")',
+        'record(ai, "$(P)Loop1:RANGE_RBV")',
         'record(ai, "$(P)Loop1:HTR_RBV")',
+        'record(ai, "$(P)Loop1:PID:P_RBV")',
+        'record(ai, "$(P)Loop1:PID:I_RBV")',
+        'record(ai, "$(P)Loop1:PID:D_RBV")',
         'record(mbbo, "$(P)COMM:STATUS")',
         'record(stringout, "$(P)ERR")',
+        'alias("$(P)Input:A:TEMP_RBV", "$(P)ColdHead:TEMP_RBV")',
+        'alias("$(P)Input:B:TEMP_RBV", "$(P)Sample:TEMP_RBV")',
     ]:
         assert record in db
 
-    assert "WARMUP" not in db
+    assert 'record(ai, "$(P)ColdHead:TEMP_RBV")' not in db
+    assert 'record(ai, "$(P)Sample:TEMP_RBV")' not in db
 
 
-def test_database_enforces_conservative_write_limits():
-    db = read("ls336App/Db/ls336.db")
-
-    assert 'field(DRVH, "350")' in db
-    assert 'field(HOPR, "350")' in db
-    assert 'field(DRVH, "10")' in db
-    assert 'field(HOPR, "10")' in db
-    assert "validate_setpoint" in db
-    assert "validate_ramp_rate" in db
-    assert "Setpoint must be within 0..350 K" in db
-    assert "Ramp rate must be within 0..10 K/min" in db
-
-
-def test_database_derives_communication_status_from_readback_alarms():
-    db = read("ls336App/Db/ls336.db")
-
-    assert 'field(INPA, "$(P)ColdHead:TEMP_RBV.SEVR CP MS")' in db
-    assert 'field(INPB, "$(P)Sample:TEMP_RBV.SEVR CP MS")' in db
-    assert 'field(INPC, "$(P)Loop1:SETP_RBV.SEVR CP MS")' in db
-    assert 'field(INPD, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")' in db
-    assert 'field(INPE, "$(P)Loop1:RAMP:ENABLE_RBV_RAW.SEVR CP MS")' in db
-    assert 'field(INPF, "$(P)Loop1:HTR_RBV.SEVR CP MS")' in db
-    assert 'field(CALC, "A>0||B>0||C>0||D>0||E>0||F>0?2:1")' in db
-
-
-def test_protocol_contains_lakeshore_336_commands():
+def test_protocol_covers_phase_one_queries_writes_and_omits_init():
     proto = read("ls336App/protocol/ls336.proto")
 
     for command in [
-        'out "*IDN?"',
-        'out "KRDG? A"',
-        'out "KRDG? B"',
-        'out "SETP? 1"',
-        'out "SETP 1,%f"',
-        'out "RAMP? 1"',
-        'out "RAMP 1,%(\\$1Loop1:RAMP:ENABLE.VAL)d,%f"',
-        'out "HTR? 1"',
-        "@init { getRampRate; getRampEnable; }",
+        'getIDN {',
+        'out "*IDN?";',
+        'getTemperature {',
+        'out "KRDG? \\$1";',
+        'getControlInput {',
+        'out "OUTMODE? 1";',
+        'getSetpoint {',
+        'out "SETP? 1";',
+        'setSetpoint {',
+        'out "SETP 1,%f";',
+        'getRampEnable {',
+        'getRampRate {',
+        'out "RAMP? 1";',
+        'getRange {',
+        'out "RANGE? 1";',
+        'setRange {',
+        'out "RANGE 1,%d";',
+        'getHeater {',
+        'out "HTR? 1";',
+        'getPidP {',
+        'getPidI {',
+        'getPidD {',
+        'out "PID? 1";',
     ]:
         assert command in proto
+
+    assert "@init" not in proto
+
+
+def test_startup_and_scan_contracts_match_phase_one_polling():
+    db = read("ls336App/Db/ls336.db")
+    startup = read("iocBoot/iocLS336/st.cmd")
+
+    assert db.count('field(SCAN, "2 second")') >= 10
+    assert db.count('field(SCAN, "10 second")') >= 4
+    assert 'field(PINI, "NO")' in db
+    assert "seq " not in startup
+    assert ".st" not in startup
+
+
+def test_phase_one_deferred_scope_stays_out_of_the_database_and_boot():
+    db = read("ls336App/Db/ls336.db")
+    startup = read("iocBoot/iocLS336/st.cmd")
+
+    for snippet in [
+        "APPLY",
+        "CTRL:ENABLE",
+        'record(ao, "$(P)Loop1:INPUT")',
+        'record(bo, "$(P)Loop1:INPUT")',
+        'record(mbbo, "$(P)Loop1:INPUT")',
+        'record(ao, "$(P)Loop1:PID:P")',
+        'record(ao, "$(P)Loop1:PID:I")',
+        'record(ao, "$(P)Loop1:PID:D")',
+        "WARMUP",
+    ]:
+        assert snippet not in db
+
+    assert "seq " not in startup
+    assert ".st" not in startup
+
+
+def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
+    db = read("ls336App/Db/ls336.db")
+
+    for snippet in [
+        'field(SDIS, "$(P)Loop1:SETP:INVALID PP MS")',
+        'field(SDIS, "$(P)Loop1:RAMP:RATE:INVALID PP MS")',
+        'field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")',
+        'field(DISS, "INVALID")',
+        'field(CALC, "A<0||A>350")',
+        'field(CALC, "A<0||A>10")',
+        'field(CALC, "A<0||A>3")',
+        'field(HOPR, "350")',
+        'field(HOPR, "10")',
+    ]:
+        assert snippet in db
+
+    assert db.count('field(DISS, "INVALID")') >= 3
+    assert 'field(DRVH,' not in db
+    assert 'field(DRVL,' not in db
 
 
 def test_startup_script_configures_serial_port_for_wsl_defaults():
