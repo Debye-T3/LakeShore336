@@ -23,6 +23,10 @@ getSetpoint {
     in "%f";
 }
 
+setSetpoint {
+    out "SETP 1,%f";
+}
+
 getRampEnable {
     out "RAMP? 1";
     in "%d,%*f";
@@ -36,6 +40,10 @@ getRampRate {
 getRange {
     out "RANGE? 1";
     in "%d";
+}
+
+setRange {
+    out "RANGE 1,%d";
 }
 
 getHeater {

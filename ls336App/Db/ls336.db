@@ -55,6 +55,20 @@ record(mbbi, "$(P)Loop1:INPUT_RBV") {
     field(SCAN, "2 second")
 }
 
+record(ao, "$(P)Loop1:SETP") {
+    field(DESC, "Loop 1 setpoint command")
+    field(DTYP, "stream")
+    field(OUT,  "@ls336.proto setSetpoint $(PORT)")
+    field(EGU,  "K")
+    field(PREC, "3")
+    field(LOPR, "0")
+    field(HOPR, "350")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:SETP:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+}
+
 record(ai, "$(P)Loop1:SETP_RBV") {
     field(DESC, "Loop 1 setpoint readback")
     field(DTYP, "stream")
@@ -62,6 +76,20 @@ record(ai, "$(P)Loop1:SETP_RBV") {
     field(EGU,  "K")
     field(PREC, "3")
     field(SCAN, "2 second")
+}
+
+record(calcout, "$(P)Loop1:SETP:INVALID") {
+    field(DESC, "Loop 1 setpoint validation")
+    field(INPA, "$(P)Loop1:SETP.VAL NPP NMS")
+    field(CALC, "A<0||A>350")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)ERR:SETP.PROC PP")
+}
+
+record(stringout, "$(P)ERR:SETP") {
+    field(DESC, "Setpoint validation error")
+    field(VAL,  "Setpoint must be within 0..350 K")
+    field(OUT,  "$(P)ERR PP")
 }
 
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
@@ -82,6 +110,20 @@ record(ai, "$(P)Loop1:RAMP:RATE_RBV") {
     field(SCAN, "2 second")
 }
 
+record(mbbo, "$(P)Loop1:RANGE") {
+    field(DESC, "Loop 1 heater range command")
+    field(DTYP, "stream")
+    field(OUT,  "@ls336.proto setRange $(PORT)")
+    field(ZRST, "Off")
+    field(ONST, "Low")
+    field(TWST, "Medium")
+    field(THST, "High")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+}
+
 record(mbbi, "$(P)Loop1:RANGE_RBV") {
     field(DESC, "Loop 1 heater range readback")
     field(DTYP, "stream")
@@ -91,6 +133,20 @@ record(mbbi, "$(P)Loop1:RANGE_RBV") {
     field(TWST, "Medium")
     field(THST, "High")
     field(SCAN, "2 second")
+}
+
+record(calcout, "$(P)Loop1:RANGE:INVALID") {
+    field(DESC, "Loop 1 heater range validation")
+    field(INPA, "$(P)Loop1:RANGE.VAL NPP NMS")
+    field(CALC, "A<0||A>3")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)ERR:RANGE.PROC PP")
+}
+
+record(stringout, "$(P)ERR:RANGE") {
+    field(DESC, "Heater range validation error")
+    field(VAL,  "Heater range must be within 0..3")
+    field(OUT,  "$(P)ERR PP")
 }
 
 record(ai, "$(P)Loop1:HTR_RBV") {
