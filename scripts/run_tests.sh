@@ -4,6 +4,10 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+if [[ "${1-}" == "--ioc-integration" ]]; then
+    exec python3 -m pytest -q tests/test_ioc_integration.py -rs
+fi
+
 if python3 -c "import pytest" >/dev/null 2>&1; then
     exec python3 -m pytest -q "$@"
 fi
