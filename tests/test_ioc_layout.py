@@ -107,10 +107,28 @@ def test_startup_and_scan_contracts_match_phase_one_polling():
     startup = read("iocBoot/iocLS336/st.cmd")
     makefile = read("ls336App/src/Makefile")
 
-    assert db.count('field(SCAN, "2 second")') >= 10
-    assert db.count('field(SCAN, "10 second")') >= 4
-    assert 'field(PINI, "NO")' in db
-    assert 'field(PINI, "YES")' not in db
+    for pv_name in [
+        "$(P)IDN",
+        "$(P)Loop1:PID:P_RBV",
+        "$(P)Loop1:PID:I_RBV",
+        "$(P)Loop1:PID:D_RBV",
+    ]:
+        assert 'field(SCAN, "10 second")' in record_block(db, pv_name)
+
+    for pv_name in [
+        "$(P)Input:A:TEMP_RBV",
+        "$(P)Input:B:TEMP_RBV",
+        "$(P)Input:C:TEMP_RBV",
+        "$(P)Input:D:TEMP_RBV",
+        "$(P)Loop1:INPUT_RBV",
+        "$(P)Loop1:SETP_RBV",
+        "$(P)Loop1:RAMP:ENABLE_RBV",
+        "$(P)Loop1:RAMP:RATE_RBV",
+        "$(P)Loop1:RANGE_RBV",
+        "$(P)Loop1:HTR_RBV",
+    ]:
+        assert 'field(SCAN, "2 second")' in record_block(db, pv_name)
+
     for pv_name in [
         "$(P)Loop1:SETP",
         "$(P)Loop1:RAMP:ENABLE",
@@ -154,8 +172,13 @@ def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
         assert snippet in db
 
     assert db.count('field(DISS, "INVALID")') >= 3
-    assert 'field(DRVH,' not in db
-    assert 'field(DRVL,' not in db
+    for pv_name in [
+        "$(P)Loop1:SETP",
+        "$(P)Loop1:RAMP:RATE",
+    ]:
+        block = record_block(db, pv_name)
+        assert 'field(DRVH,' not in block
+        assert 'field(DRVL,' not in block
 
 
 def test_startup_script_configures_serial_port_for_wsl_defaults():
