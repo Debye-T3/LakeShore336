@@ -246,6 +246,75 @@ def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
         assert 'field(DRVL,' not in block
 
 
+def test_communication_status_uses_exact_severity_inputs_and_states():
+    db = read("ls336App/Db/ls336.db")
+    status_block = record_block(db, "$(P)COMM:STATUS")
+    calc_block = record_block(db, "$(P)COMM:STATUS:CALC")
+
+    for snippet in [
+        'record(mbbo, "$(P)COMM:STATUS")',
+        'field(ZRST, "Disconnected")',
+        'field(ONST, "Connected")',
+        'field(TWST, "Error")',
+        'field(VAL,  "1")',
+        'field(FLNK, "$(P)COMM:STATUS:ERROR")',
+    ]:
+        assert snippet in status_block
+    assert 'field(DTYP,' not in status_block
+
+    for snippet in [
+        'field(INPA, "$(P)IDN.SEVR CP MS")',
+        'field(INPB, "$(P)Input:A:TEMP_RBV.SEVR CP MS")',
+        'field(INPC, "$(P)Input:B:TEMP_RBV.SEVR CP MS")',
+        'field(INPD, "$(P)Input:C:TEMP_RBV.SEVR CP MS")',
+        'field(INPE, "$(P)Input:D:TEMP_RBV.SEVR CP MS")',
+        'field(INPF, "$(P)Loop1:INPUT_RBV.SEVR CP MS")',
+        'field(INPG, "$(P)Loop1:SETP_RBV.SEVR CP MS")',
+        'field(INPH, "$(P)Loop1:RAMP:ENABLE_RBV.SEVR CP MS")',
+        'field(INPI, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")',
+        'field(INPJ, "$(P)Loop1:RANGE_RBV.SEVR CP MS")',
+        'field(INPK, "$(P)Loop1:HTR_RBV.SEVR CP MS")',
+        'field(CALC, "A>0?0:(B>0||C>0||D>0||E>0||F>0||G>0||H>0||I>0||J>0||K>0?2:1)")',
+        'field(OOPT, "Every Time")',
+        'field(OUT,  "$(P)COMM:STATUS PP")',
+        'field(SCAN, "2 second")',
+    ]:
+        assert snippet in calc_block
+
+    for snippet in [
+        "PID:P_RBV.SEVR",
+        "PID:I_RBV.SEVR",
+        "PID:D_RBV.SEVR",
+        "RAMP:ENABLE_RBV_RAW.SEVR",
+        "RAMP:ENABLE:CACHE",
+        "RAMP:RATE:CACHE",
+    ]:
+        assert snippet not in calc_block
+
+
+def test_communication_error_helper_writes_short_summary_to_public_err():
+    db = read("ls336App/Db/ls336.db")
+
+    helper_block = record_block(db, "$(P)COMM:STATUS:ERROR")
+    err_block = record_block(db, "$(P)ERR:COMM")
+
+    for snippet in [
+        'record(calcout, "$(P)COMM:STATUS:ERROR")',
+        'field(INPA, "$(P)COMM:STATUS NPP NMS")',
+        'field(CALC, "A!=1")',
+        'field(OOPT, "When Non-zero")',
+        'field(OUT,  "$(P)ERR:COMM.PROC PP")',
+    ]:
+        assert snippet in helper_block
+
+    for snippet in [
+        'record(stringout, "$(P)ERR:COMM")',
+        'field(VAL,  "Communication failure; inspect record STAT/SEVR")',
+        'field(OUT,  "$(P)ERR PP")',
+    ]:
+        assert snippet in err_block
+
+
 def test_startup_script_configures_serial_port_for_wsl_defaults():
     startup = read("iocBoot/iocLS336/st.cmd")
 

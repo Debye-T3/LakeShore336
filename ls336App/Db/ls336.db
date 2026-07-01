@@ -231,24 +231,44 @@ record(ai, "$(P)Loop1:PID:D_RBV") {
 
 record(mbbo, "$(P)COMM:STATUS") {
     field(DESC, "IOC communication status")
-    field(ZRST, "Unknown")
+    field(ZRST, "Disconnected")
     field(ONST, "Connected")
     field(TWST, "Error")
-    field(VAL,  "0")
+    field(VAL,  "1")
+    field(FLNK, "$(P)COMM:STATUS:ERROR")
 }
 
 record(calcout, "$(P)COMM:STATUS:CALC") {
     field(DESC, "communication alarm summary")
-    field(INPA, "$(P)ColdHead:TEMP_RBV.SEVR CP MS")
-    field(INPB, "$(P)Sample:TEMP_RBV.SEVR CP MS")
-    field(INPC, "$(P)Loop1:SETP_RBV.SEVR CP MS")
-    field(INPD, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")
-    field(INPE, "$(P)Loop1:RAMP:ENABLE_RBV.SEVR CP MS")
-    field(INPF, "$(P)Loop1:HTR_RBV.SEVR CP MS")
-    field(CALC, "A>0||B>0||C>0||D>0||E>0||F>0?2:1")
+    field(INPA, "$(P)IDN.SEVR CP MS")
+    field(INPB, "$(P)Input:A:TEMP_RBV.SEVR CP MS")
+    field(INPC, "$(P)Input:B:TEMP_RBV.SEVR CP MS")
+    field(INPD, "$(P)Input:C:TEMP_RBV.SEVR CP MS")
+    field(INPE, "$(P)Input:D:TEMP_RBV.SEVR CP MS")
+    field(INPF, "$(P)Loop1:INPUT_RBV.SEVR CP MS")
+    field(INPG, "$(P)Loop1:SETP_RBV.SEVR CP MS")
+    field(INPH, "$(P)Loop1:RAMP:ENABLE_RBV.SEVR CP MS")
+    field(INPI, "$(P)Loop1:RAMP:RATE_RBV.SEVR CP MS")
+    field(INPJ, "$(P)Loop1:RANGE_RBV.SEVR CP MS")
+    field(INPK, "$(P)Loop1:HTR_RBV.SEVR CP MS")
+    field(CALC, "A>0?0:(B>0||C>0||D>0||E>0||F>0||G>0||H>0||I>0||J>0||K>0?2:1)")
     field(OOPT, "Every Time")
     field(OUT,  "$(P)COMM:STATUS PP")
     field(SCAN, "2 second")
+}
+
+record(calcout, "$(P)COMM:STATUS:ERROR") {
+    field(DESC, "communication status helper")
+    field(INPA, "$(P)COMM:STATUS NPP NMS")
+    field(CALC, "A!=1")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)ERR:COMM.PROC PP")
+}
+
+record(stringout, "$(P)ERR:COMM") {
+    field(DESC, "communication failure summary")
+    field(VAL,  "Communication failure; inspect record STAT/SEVR")
+    field(OUT,  "$(P)ERR PP")
 }
 
 record(stringout, "$(P)ERR") {
