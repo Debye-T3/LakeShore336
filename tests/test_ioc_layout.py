@@ -598,29 +598,16 @@ def test_documentation_matches_current_public_workflow():
     readme = read("README.md")
     tutorial = read("docs/operator_tutorial_zh.md")
 
+    for heading in [
+        "## Phase 1 IOC Scope",
+        "## Public PVs",
+        "## Phase 1 IOC Behavior",
+        "## Safety Limits",
+        "## Hardware Commissioning Checklist",
+    ]:
+        assert heading in readme
+
     for snippet in [
-        "The EPICS IOC is the sole hardware connection owner in Phase 1.",
-        "Direct Windows dashboards, the local web dashboard, and the portable ZIP package may only talk to hardware while the IOC is stopped.",
-        "Phase 1 does not convert the existing logger into EPICS records.",
-        "`OUTMODE? 1` only to publish the read-only `LS336:Loop1:INPUT_RBV` state.",
-        "The EPICS IOC does not write `CSET` in Phase 1.",
-        "Startup sends queries only and never issues `SETP`, `RAMP`, or `RANGE`.",
-        "All public output records use `PINI` = `NO`",
-        "A successful command PV write only confirms IOC processing; it is not hardware confirmation.",
-        "Independent readback PVs such as `LS336:Loop1:SETP_RBV`, `LS336:Loop1:RAMP:ENABLE_RBV`, `LS336:Loop1:RAMP:RATE_RBV`, and `LS336:Loop1:RANGE_RBV` are authoritative.",
-        "`LS336:Loop1:SETP` accepts `0..350 K`.",
-        "`LS336:Loop1:RAMP:RATE` accepts `0..10 K/min`.",
-        "`LS336:Loop1:RANGE` accepts `0..3`.",
-        "Out-of-range writes are blocked by `SDIS` before StreamDevice sends any serial command.",
-        "The integration tests check for zero serial output on rejected `SETP`, `RAMP`, and `RANGE` writes.",
-        "Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the current hardware enable bit.",
-        "Changing `LS336:Loop1:RAMP:ENABLE` first queries `RAMP? 1` and preserves the current hardware rate.",
-        "Each update is emitted as one locked StreamDevice transaction.",
-        "`pytest -q`",
-        "`make`",
-        "`bash scripts/run_tests.sh --ioc-integration`",
-        "`wsl -d Ubuntu-24.04 -- bash -lc 'cd /mnt/d/Projects/LakeShore336 && bash scripts/run_tests.sh --ioc-integration'`",
-        "The PTY shim is test-only; production `iocBoot/iocLS336/st.cmd` keeps the real controller at `57600 7O1`.",
         "server-side CSV archiving",
         "starts recording automatically",
         "ordinary operator page only shows recording status",
@@ -633,6 +620,23 @@ def test_documentation_matches_current_public_workflow():
         "/maintenance",
         "PID writes require confirmation",
         "meta.json",
+    ]:
+        assert snippet in readme
+
+    phase_one_scope = readme.split("## Phase 1 IOC Scope", 1)[1].split("## Target Setup", 1)[0]
+    for snippet in [
+        "sole hardware connection owner",
+        "IOC is stopped",
+        "logger",
+        "EPICS records",
+        "OUTMODE? 1",
+        "LS336:Loop1:INPUT_RBV",
+        "CSET",
+    ]:
+        assert snippet in phase_one_scope
+
+    public_pvs = readme.split("## Public PVs", 1)[1].split("## Phase 1 IOC Behavior", 1)[0]
+    for snippet in [
         "LS336:IDN",
         "LS336:Input:A:TEMP_RBV",
         "LS336:Input:B:TEMP_RBV",
@@ -641,30 +645,91 @@ def test_documentation_matches_current_public_workflow():
         "LS336:ColdHead:TEMP_RBV",
         "LS336:Sample:TEMP_RBV",
         "LS336:Loop1:INPUT_RBV",
+        "LS336:Loop1:SETP",
+        "LS336:Loop1:SETP_RBV",
+        "LS336:Loop1:RAMP:ENABLE",
+        "LS336:Loop1:RAMP:ENABLE_RBV",
+        "LS336:Loop1:RAMP:RATE",
+        "LS336:Loop1:RAMP:RATE_RBV",
+        "LS336:Loop1:RANGE",
+        "LS336:Loop1:RANGE_RBV",
+        "LS336:Loop1:HTR_RBV",
         "LS336:Loop1:PID:P_RBV",
         "LS336:Loop1:PID:I_RBV",
         "LS336:Loop1:PID:D_RBV",
-        "`Disconnected`, `Connected`, and `Error`",
+        "LS336:COMM:STATUS",
+        "Disconnected",
+        "Connected",
+        "Error",
+        "LS336:ERR",
+    ]:
+        assert snippet in public_pvs
+
+    phase_one_behavior = readme.split("## Phase 1 IOC Behavior", 1)[1].split("## Safety Limits", 1)[0]
+    for snippet in [
+        "SETP",
+        "RAMP",
+        "RANGE",
+        "PINI",
+        "LS336:Loop1:SETP_RBV",
+        "LS336:Loop1:RAMP:ENABLE_RBV",
+        "LS336:Loop1:RAMP:RATE_RBV",
+        "LS336:Loop1:RANGE_RBV",
+        "RAMP? 1",
+        "locked StreamDevice transaction",
+    ]:
+        assert snippet in phase_one_behavior
+
+    safety_limits = readme.split("## Safety Limits", 1)[1].split("## Build On Linux", 1)[0]
+    for snippet in [
+        "LS336:Loop1:SETP",
+        "0..350 K",
+        "LS336:Loop1:RAMP:RATE",
+        "0..10 K/min",
+        "LS336:Loop1:RANGE",
+        "0..3",
+        "SDIS",
+        "zero serial output",
+        "SETP",
+        "RAMP",
+        "RANGE",
+    ]:
+        assert snippet in safety_limits
+
+    build_linux = readme.split("## Build On Linux", 1)[1].split("## Run On Linux", 1)[0]
+    for snippet in [
+        "pytest -q",
+        "make",
+        "--ioc-integration",
+        "Ubuntu-24.04",
+        "57600 7O1",
+    ]:
+        assert snippet in build_linux
+
+    commissioning = readme.split("## Hardware Commissioning Checklist", 1)[1].split("## Visual Dashboard", 1)[0]
+    for snippet in [
+        "caget LS336:IDN",
         "caget LS336:Input:A:TEMP_RBV",
         "caget LS336:Input:B:TEMP_RBV",
         "caget LS336:Input:C:TEMP_RBV",
         "caget LS336:Input:D:TEMP_RBV",
         "caget LS336:ColdHead:TEMP_RBV",
+        "caget LS336:Sample:TEMP_RBV",
         "caget LS336:Loop1:INPUT_RBV",
+        "caget LS336:COMM:STATUS",
         "caput LS336:Loop1:SETP 300",
+        "caget LS336:Loop1:SETP_RBV",
         "caput LS336:Loop1:RAMP:ENABLE 1",
         "caput LS336:Loop1:RAMP:RATE 1",
-        "caput LS336:Loop1:RANGE 1",
-        "caget LS336:Loop1:SETP_RBV",
         "caget LS336:Loop1:RAMP:ENABLE_RBV",
         "caget LS336:Loop1:RAMP:RATE_RBV",
+        "caput LS336:Loop1:RANGE 1",
         "caget LS336:Loop1:RANGE_RBV",
         "caget LS336:Loop1:HTR_RBV",
-        "Use `Low` or `Off` until heater commissioning says otherwise.",
-        "Stop the IOC before opening the direct Windows dashboard, the local web dashboard, or the portable packaged app against the same controller.",
-        "If the serial link drops, confirm `LS336:COMM:STATUS`, reconnect the USB/serial path, and wait for the authoritative RBVs to recover before sending another command.",
+        "Low",
+        "Off",
     ]:
-        assert snippet in readme
+        assert snippet in commissioning
 
     for snippet in [
         "温度日志归档",
