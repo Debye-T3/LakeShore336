@@ -81,7 +81,7 @@ record(ai, "$(P)Loop1:SETP_RBV") {
 record(calcout, "$(P)Loop1:SETP:INVALID") {
     field(DESC, "Loop 1 setpoint validation")
     field(INPA, "$(P)Loop1:SETP.VAL NPP NMS")
-    field(CALC, "A<0||A>350")
+    field(CALC, "!(A>=0&&A<=350)")
     field(OOPT, "When Non-zero")
     field(OUT,  "$(P)ERR:SETP.PROC PP")
 }
@@ -102,13 +102,27 @@ record(ai, "$(P)Loop1:RAMP:RATE:CACHE") {
     field(PINI, "NO")
 }
 
-record(bo, "$(P)Loop1:RAMP:ENABLE") {
+record(ao, "$(P)Loop1:RAMP:ENABLE") {
     field(DESC, "Loop 1 ramp enable command")
+    field(LOPR, "0")
+    field(HOPR, "1")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+    field(FLNK, "$(P)Loop1:RAMP:ENABLE:WRITE")
+}
+
+record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE") {
+    field(DESC, "Private ramp enable writer")
     field(DTYP, "stream")
     field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")
-    field(ZNAM, "Off")
-    field(ONAM, "On")
+    field(DOL,  "$(P)Loop1:RAMP:ENABLE.VAL NPP NMS")
+    field(OMSL, "closed_loop")
     field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
 }
 
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
@@ -129,6 +143,20 @@ record(ai, "$(P)Loop1:RAMP:RATE_RBV") {
     field(SCAN, "2 second")
 }
 
+record(calcout, "$(P)Loop1:RAMP:ENABLE:INVALID") {
+    field(DESC, "Loop 1 ramp enable validation")
+    field(INPA, "$(P)Loop1:RAMP:ENABLE.VAL NPP NMS")
+    field(CALC, "!(A==0||A==1)")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)ERR:RAMP:ENABLE.PROC PP")
+}
+
+record(stringout, "$(P)ERR:RAMP:ENABLE") {
+    field(DESC, "Ramp enable validation error")
+    field(VAL,  "Ramp enable must be 0 or 1")
+    field(OUT,  "$(P)ERR PP")
+}
+
 record(ao, "$(P)Loop1:RAMP:RATE") {
     field(DESC, "Loop 1 ramp rate command")
     field(DTYP, "stream")
@@ -146,7 +174,7 @@ record(ao, "$(P)Loop1:RAMP:RATE") {
 record(calcout, "$(P)Loop1:RAMP:RATE:INVALID") {
     field(DESC, "Loop 1 ramp rate validation")
     field(INPA, "$(P)Loop1:RAMP:RATE.VAL NPP NMS")
-    field(CALC, "A<0||A>10")
+    field(CALC, "!(A>=0&&A<=10)")
     field(OOPT, "When Non-zero")
     field(OUT,  "$(P)ERR:RAMP.PROC PP")
 }
@@ -157,14 +185,23 @@ record(stringout, "$(P)ERR:RAMP") {
     field(OUT,  "$(P)ERR PP")
 }
 
-record(mbbo, "$(P)Loop1:RANGE") {
+record(ao, "$(P)Loop1:RANGE") {
     field(DESC, "Loop 1 heater range command")
+    field(LOPR, "0")
+    field(HOPR, "3")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+    field(FLNK, "$(P)Loop1:RANGE:WRITE")
+}
+
+record(ao, "$(P)Loop1:RANGE:WRITE") {
+    field(DESC, "Private heater range writer")
     field(DTYP, "stream")
     field(OUT,  "@ls336.proto setRange $(PORT)")
-    field(ZRST, "Off")
-    field(ONST, "Low")
-    field(TWST, "Medium")
-    field(THST, "High")
+    field(DOL,  "$(P)Loop1:RANGE.VAL NPP NMS")
+    field(OMSL, "closed_loop")
     field(PINI, "NO")
     field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
     field(DISV, "1")
@@ -185,7 +222,7 @@ record(mbbi, "$(P)Loop1:RANGE_RBV") {
 record(calcout, "$(P)Loop1:RANGE:INVALID") {
     field(DESC, "Loop 1 heater range validation")
     field(INPA, "$(P)Loop1:RANGE.VAL NPP NMS")
-    field(CALC, "A<0||A>3")
+    field(CALC, "!(A==0||A==1||A==2||A==3)")
     field(OOPT, "When Non-zero")
     field(OUT,  "$(P)ERR:RANGE.PROC PP")
 }
@@ -267,7 +304,7 @@ record(calcout, "$(P)COMM:STATUS:ERROR") {
 
 record(stringout, "$(P)ERR:COMM") {
     field(DESC, "communication failure summary")
-    field(VAL,  "Communication failure; inspect record STAT/SEVR")
+    field(VAL,  "Communication failure; inspect alarms")
     field(OUT,  "$(P)ERR PP")
 }
 

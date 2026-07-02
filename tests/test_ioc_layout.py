@@ -48,11 +48,13 @@ def test_database_exposes_simplified_phase_one_pvs():
         'field(INP,  "@ls336.proto getTemperature(D) $(PORT)")',
         'record(ao, "$(P)Loop1:SETP")',
         'record(ai, "$(P)Loop1:SETP_RBV")',
-        'record(bo, "$(P)Loop1:RAMP:ENABLE")',
+        'record(ao, "$(P)Loop1:RAMP:ENABLE")',
+        'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")',
         'record(bi, "$(P)Loop1:RAMP:ENABLE_RBV")',
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'record(ai, "$(P)Loop1:RAMP:RATE_RBV")',
-        'record(mbbo, "$(P)Loop1:RANGE")',
+        'record(ao, "$(P)Loop1:RANGE")',
+        'record(ao, "$(P)Loop1:RANGE:WRITE")',
         'record(mbbi, "$(P)Loop1:RANGE_RBV")',
         'record(ai, "$(P)Loop1:HTR_RBV")',
         'record(ai, "$(P)Loop1:PID:P_RBV")',
@@ -145,7 +147,8 @@ def test_ramp_write_database_uses_private_caches_and_public_validation():
     for snippet in [
         'record(longin, "$(P)Loop1:RAMP:ENABLE:CACHE")',
         'record(ai, "$(P)Loop1:RAMP:RATE:CACHE")',
-        'record(bo, "$(P)Loop1:RAMP:ENABLE")',
+        'record(ao, "$(P)Loop1:RAMP:ENABLE")',
+        'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")',
         'field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")',
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'field(OUT,  "@ls336.proto setRampRate($(P)) $(PORT)")',
@@ -158,13 +161,80 @@ def test_ramp_write_database_uses_private_caches_and_public_validation():
         'field(DISS, "INVALID")',
         'record(calcout, "$(P)Loop1:RAMP:RATE:INVALID")',
         'field(INPA, "$(P)Loop1:RAMP:RATE.VAL NPP NMS")',
-        'field(CALC, "A<0||A>10")',
+        'field(CALC, "!(A>=0&&A<=10)")',
         'field(OOPT, "When Non-zero")',
         'field(OUT,  "$(P)ERR:RAMP.PROC PP")',
         'record(stringout, "$(P)ERR:RAMP")',
         'field(VAL,  "Ramp rate must be within 0..10 K/min")',
     ]:
         assert snippet in db
+
+
+def test_enum_commands_stage_raw_values_before_guarded_private_writers():
+    db = read("ls336App/Db/ls336.db")
+
+    commands = [
+        (
+            "$(P)Loop1:RAMP:ENABLE",
+            "$(P)Loop1:RAMP:ENABLE:WRITE",
+            "$(P)Loop1:RAMP:ENABLE:INVALID",
+            "1",
+            "@ls336.proto setRampEnable($(P)) $(PORT)",
+        ),
+        (
+            "$(P)Loop1:RANGE",
+            "$(P)Loop1:RANGE:WRITE",
+            "$(P)Loop1:RANGE:INVALID",
+            "3",
+            "@ls336.proto setRange $(PORT)",
+        ),
+    ]
+    for public_name, writer_name, invalid_name, hopr, protocol in commands:
+        public = record_block(db, public_name)
+        writer = record_block(db, writer_name)
+
+        for snippet in [
+            'field(LOPR, "0")',
+            f'field(HOPR, "{hopr}")',
+            'field(PINI, "NO")',
+            f'field(SDIS, "{invalid_name} PP MS")',
+            'field(DISV, "1")',
+            'field(DISS, "INVALID")',
+            f'field(FLNK, "{writer_name}")',
+        ]:
+            assert snippet in public
+        for field in ["DTYP", "OUT", "DRVH", "DRVL"]:
+            assert f"field({field}," not in public
+
+        for snippet in [
+            'field(DTYP, "stream")',
+            f'field(OUT,  "{protocol}")',
+            f'field(DOL,  "{public_name}.VAL NPP NMS")',
+            'field(OMSL, "closed_loop")',
+            'field(PINI, "NO")',
+            f'field(SDIS, "{invalid_name} PP MS")',
+            'field(DISV, "1")',
+            'field(DISS, "INVALID")',
+        ]:
+            assert snippet in writer
+
+    enable_invalid = record_block(db, "$(P)Loop1:RAMP:ENABLE:INVALID")
+    for snippet in [
+        'field(INPA, "$(P)Loop1:RAMP:ENABLE.VAL NPP NMS")',
+        'field(CALC, "!(A==0||A==1)")',
+        'field(OOPT, "When Non-zero")',
+        'field(OUT,  "$(P)ERR:RAMP:ENABLE.PROC PP")',
+    ]:
+        assert snippet in enable_invalid
+
+    range_invalid = record_block(db, "$(P)Loop1:RANGE:INVALID")
+    for snippet in [
+        'field(INPA, "$(P)Loop1:RANGE.VAL NPP NMS")',
+        'field(CALC, "!(A==0||A==1||A==2||A==3)")',
+        'field(OOPT, "When Non-zero")',
+        'field(OUT,  "$(P)ERR:RANGE.PROC PP")',
+    ]:
+        assert snippet in range_invalid
 
 
 def test_startup_and_scan_contracts_match_phase_one_polling():
@@ -225,21 +295,25 @@ def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
 
     for snippet in [
         'field(SDIS, "$(P)Loop1:SETP:INVALID PP MS")',
+        'field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")',
         'field(SDIS, "$(P)Loop1:RAMP:RATE:INVALID PP MS")',
         'field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")',
         'field(DISS, "INVALID")',
-        'field(CALC, "A<0||A>350")',
-        'field(CALC, "A<0||A>10")',
-        'field(CALC, "A<0||A>3")',
+        'field(CALC, "!(A>=0&&A<=350)")',
+        'field(CALC, "!(A==0||A==1)")',
+        'field(CALC, "!(A>=0&&A<=10)")',
+        'field(CALC, "!(A==0||A==1||A==2||A==3)")',
         'field(HOPR, "350")',
         'field(HOPR, "10")',
     ]:
         assert snippet in db
 
-    assert db.count('field(DISS, "INVALID")') >= 3
+    assert db.count('field(DISS, "INVALID")') >= 6
     for pv_name in [
         "$(P)Loop1:SETP",
+        "$(P)Loop1:RAMP:ENABLE",
         "$(P)Loop1:RAMP:RATE",
+        "$(P)Loop1:RANGE",
     ]:
         block = record_block(db, pv_name)
         assert 'field(DRVH,' not in block
@@ -307,12 +381,20 @@ def test_communication_error_helper_writes_short_summary_to_public_err():
     ]:
         assert snippet in helper_block
 
-    for snippet in [
-        'record(stringout, "$(P)ERR:COMM")',
-        'field(VAL,  "Communication failure; inspect record STAT/SEVR")',
-        'field(OUT,  "$(P)ERR PP")',
-    ]:
-        assert snippet in err_block
+    assert 'record(stringout, "$(P)ERR:COMM")' in err_block
+    assert 'field(OUT,  "$(P)ERR PP")' in err_block
+
+    value_match = re.search(r'field\(VAL,\s*"([^"]*)"\)', err_block)
+    assert value_match is not None
+    assert value_match.group(1) == "Communication failure; inspect alarms"
+    assert len(value_match.group(1)) <= 39
+
+
+def test_ioc_integration_resolves_ca_tools_without_a_hard_coded_epics_base():
+    integration = read("tests/test_ioc_integration.py")
+
+    assert 'ROOT / "configure" / "RELEASE.local"' in integration
+    assert "/opt/epics/base" not in integration
 
 
 def test_startup_script_configures_serial_port_for_wsl_defaults():
@@ -671,6 +753,8 @@ def test_documentation_matches_current_public_workflow():
         "RAMP",
         "RANGE",
         "PINI",
+        "raw numeric staging",
+        "enum labels",
         "LS336:Loop1:SETP_RBV",
         "LS336:Loop1:RAMP:ENABLE_RBV",
         "LS336:Loop1:RAMP:RATE_RBV",
@@ -687,7 +771,7 @@ def test_documentation_matches_current_public_workflow():
         "LS336:Loop1:RAMP:RATE",
         "0..10 K/min",
         "LS336:Loop1:RANGE",
-        "0..3",
+        "exactly `0`, `1`, `2`, or `3`",
         "SDIS",
         "zero serial output",
         "SETP",

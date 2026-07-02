@@ -178,12 +178,12 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 | `LS336:Loop1:INPUT_RBV` | read | Read-only Loop 1 control-input state parsed from `OUTMODE? 1`. |
 | `LS336:Loop1:SETP` | write | Loop 1 setpoint command PV. |
 | `LS336:Loop1:SETP_RBV` | read | Authoritative Loop 1 setpoint readback. |
-| `LS336:Loop1:RAMP:ENABLE` | write | Loop 1 ramp-enable command PV. |
-| `LS336:Loop1:RAMP:ENABLE_RBV` | read | Authoritative ramp-enable readback. |
+| `LS336:Loop1:RAMP:ENABLE` | write | Numeric ramp-enable command: exactly `0` or `1`. |
+| `LS336:Loop1:RAMP:ENABLE_RBV` | read | Authoritative ramp-enable readback with `Off`/`On` labels. |
 | `LS336:Loop1:RAMP:RATE` | write | Loop 1 ramp-rate command PV. |
 | `LS336:Loop1:RAMP:RATE_RBV` | read | Authoritative ramp-rate readback. |
-| `LS336:Loop1:RANGE` | write | Loop 1 heater-range command PV. |
-| `LS336:Loop1:RANGE_RBV` | read | Authoritative heater-range readback. |
+| `LS336:Loop1:RANGE` | write | Numeric heater-range command: exactly `0`, `1`, `2`, or `3`. |
+| `LS336:Loop1:RANGE_RBV` | read | Authoritative heater-range readback with `Off`/`Low`/`Medium`/`High` labels. |
 | `LS336:Loop1:HTR_RBV` | read | Loop 1 heater output percentage. |
 | `LS336:Loop1:PID:P_RBV` | read | Read-only Loop 1 PID proportional readback. |
 | `LS336:Loop1:PID:I_RBV` | read | Read-only Loop 1 PID integral readback. |
@@ -197,6 +197,8 @@ Startup sends queries only and never issues `SETP`, `RAMP`, or `RANGE`. All publ
 
 A successful command PV write only confirms IOC processing; it is not hardware confirmation. Independent readback PVs such as `LS336:Loop1:SETP_RBV`, `LS336:Loop1:RAMP:ENABLE_RBV`, `LS336:Loop1:RAMP:RATE_RBV`, and `LS336:Loop1:RANGE_RBV` are authoritative.
 
+Ramp enable and heater range use raw numeric staging PVs so validation sees the client's original value before any enum coercion. Their enum labels remain on the authoritative `_RBV` records.
+
 Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the current hardware enable bit. Changing `LS336:Loop1:RAMP:ENABLE` first queries `RAMP? 1` and preserves the current hardware rate. Each update is emitted as one locked StreamDevice transaction.
 
 ## Safety Limits
@@ -204,9 +206,10 @@ Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the curre
 The public write PVs use conservative commissioning defaults:
 
 - `LS336:Loop1:SETP` accepts `0..350 K`.
+- `LS336:Loop1:RAMP:ENABLE` accepts exactly `0` or `1`.
 - `LS336:Loop1:RAMP:RATE` accepts `0..10 K/min`.
-- `LS336:Loop1:RANGE` accepts `0..3`.
-- Out-of-range writes are blocked by `SDIS` before StreamDevice sends any serial command.
+- `LS336:Loop1:RANGE` accepts exactly `0`, `1`, `2`, or `3`.
+- Out-of-range, fractional enum, and non-finite writes are blocked by `SDIS` before StreamDevice sends any serial command.
 - The integration tests check for zero serial output on rejected `SETP`, `RAMP`, and `RANGE` writes.
 
 These limits are intended for first commissioning only. Tighten them for the actual sample, cryostat, and heater configuration before routine use.

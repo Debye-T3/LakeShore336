@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import select
 import shutil
 import subprocess
@@ -17,11 +18,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 MOCK_PATH = ROOT / "scripts" / "ls336_ioc_mock.py"
 RUN_TESTS_PATH = ROOT / "scripts" / "run_tests.sh"
+RELEASE_LOCAL = ROOT / "configure" / "RELEASE.local"
 IOC_BINARY = ROOT / "bin" / "linux-x86_64" / "ls336"
 IOC_BOOT_DIR = ROOT / "iocBoot" / "iocLS336"
 PTY_TERMIOS_SHIM_SOURCE = ROOT / "tests" / "fixtures" / "pty_termios_shim.c"
-CAGET = Path("/opt/epics/base/bin/linux-x86_64/caget")
-CAPUT = Path("/opt/epics/base/bin/linux-x86_64/caput")
 LIVE_PREFIX = "LS336TEST:"
 CA_ENV = {
     "EPICS_CA_AUTO_ADDR_LIST": "NO",
@@ -37,18 +37,44 @@ def load_mock_module():
     return module
 
 
-def linux_ioc_binary_exists() -> bool:
-    return IOC_BINARY.is_file()
+def _read_epics_base(release_local: Path) -> Path:
+    for line in release_local.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^\s*EPICS_BASE\s*(?:\?=|=)\s*(.*)$", line)
+        if match is None:
+            continue
+        value = match.group(1).strip()
+        if value:
+            return Path(value)
+    raise ValueError(f"EPICS_BASE assignment missing from {release_local}")
 
 
-def linux_ca_tools_exist() -> bool:
-    return CAGET.is_file() and CAPUT.is_file()
+def _resolve_live_prerequisites() -> tuple[Path, Path]:
+    if not RELEASE_LOCAL.is_file():
+        pytest.fail(f"live IOC RELEASE.local missing: {RELEASE_LOCAL}")
+    try:
+        epics_base = _read_epics_base(RELEASE_LOCAL)
+    except ValueError as exc:
+        pytest.fail(str(exc))
+
+    if not IOC_BINARY.is_file():
+        pytest.fail(f"live IOC binary missing: {IOC_BINARY}")
+
+    tool_dir = epics_base / "bin" / "linux-x86_64"
+    caget = tool_dir / "caget"
+    caput = tool_dir / "caput"
+    if not caget.is_file():
+        pytest.fail(f"EPICS caget missing: {caget}")
+    if not caput.is_file():
+        pytest.fail(f"EPICS caput missing: {caput}")
+    return caget, caput
 
 
 @dataclass
 class RunningIOC:
     prefix: str
     ca_env: dict[str, str]
+    caget_path: Path
+    caput_path: Path
     command_log: Path
     slave_keepalive_fd: int
     ioc_process: subprocess.Popen[str]
@@ -61,18 +87,24 @@ class RunningIOC:
         return f"{self.prefix}{suffix}"
 
     def caget_str(self, suffix: str, timeout: float = 1.0) -> str:
-        result = self._run_ca_tool(CAGET, ["-w", str(timeout), "-t", "-S", self.pv(suffix)])
+        result = self._run_ca_tool(
+            self.caget_path,
+            ["-w", str(timeout), "-t", "-S", self.pv(suffix)],
+        )
         return result.stdout.strip()
 
     def caget_float(self, suffix: str, timeout: float = 1.0) -> float:
         result = self._run_ca_tool(
-            CAGET,
+            self.caget_path,
             ["-w", str(timeout), "-t", "-n", self.pv(suffix)],
         )
         return float(result.stdout.strip())
 
     def caput(self, suffix: str, value: object, timeout: float = 1.0) -> None:
-        self._run_ca_tool(CAPUT, ["-w", str(timeout), self.pv(suffix), str(value)])
+        self._run_ca_tool(
+            self.caput_path,
+            ["-w", str(timeout), self.pv(suffix), str(value)],
+        )
 
     def commands(self) -> list[dict[str, object]]:
         if not self.command_log.exists():
@@ -248,21 +280,25 @@ def _wait_for_ioc_ready(running_ioc: RunningIOC) -> None:
     deadline = time.monotonic() + 15.0
     last_error = None
     last_value = None
+    last_status = None
     while time.monotonic() < deadline:
         try:
             value = running_ioc.caget_float("ColdHead:TEMP_RBV", timeout=1.0)
+            status = running_ioc.caget_float("COMM:STATUS", timeout=1.0)
         except Exception as exc:
             last_error = exc
         else:
             last_value = value
-            if value == pytest.approx(4.2, abs=0.01):
+            last_status = status
+            if value == pytest.approx(4.2, abs=0.01) and status == 1.0:
                 return
         time.sleep(0.2)
 
     pytest.fail(
-        "IOC did not become ready via ColdHead:TEMP_RBV.\n"
+        "IOC did not become ready via ColdHead:TEMP_RBV and COMM:STATUS.\n"
         f"Last readiness error: {last_error}\n"
         f"Last readiness value: {last_value}\n"
+        f"Last communication status: {last_status}\n"
         f"{running_ioc.diagnostics()}"
     )
 
@@ -305,26 +341,49 @@ def _has_ramp_write_pair(
 def _assert_alarm_and_error(
     running_ioc: RunningIOC, record: str, error_text: str, timeout: float = 3.0
 ) -> None:
-    running_ioc.wait_for(
-        f"{record} DISABLE/INVALID alarm",
-        lambda: (
-            running_ioc.caget_str(f"{record}.STAT") == "DISABLE"
-            and running_ioc.caget_str(f"{record}.SEVR") == "INVALID"
-            and running_ioc.caget_str("ERR") == error_text
-        ),
-        timeout=timeout,
-        interval=0.1,
-    )
+    observed: dict[str, str] = {}
+
+    def alarm_and_error_match() -> bool:
+        observed["STAT"] = running_ioc.caget_str(f"{record}.STAT")
+        observed["SEVR"] = running_ioc.caget_str(f"{record}.SEVR")
+        observed["ERR"] = running_ioc.caget_str("ERR")
+        return (
+            observed["STAT"] == "DISABLE"
+            and observed["SEVR"] == "INVALID"
+            and observed["ERR"] == error_text
+        )
+
+    try:
+        running_ioc.wait_for(
+            f"{record} DISABLE/INVALID alarm",
+            alarm_and_error_match,
+            timeout=timeout,
+            interval=0.1,
+        )
+    except AssertionError as exc:
+        raise AssertionError(
+            f"{exc}; last values: {observed}\n{running_ioc.diagnostics()}"
+        ) from exc
+
+
+def _assert_no_matching_write(
+    running_ioc: RunningIOC, mark: int, command_prefix: str
+) -> None:
+    time.sleep(0.2)
+    writes = [
+        entry["command"]
+        for entry in running_ioc.commands_since(mark)
+        if isinstance(entry.get("command"), str)
+        and entry["command"].startswith(command_prefix)
+    ]
+    assert writes == [], running_ioc.diagnostics()
 
 
 @pytest.fixture
 def running_ioc():
     if os.name != "posix":
         pytest.skip("live IOC integration tests require POSIX")
-    if not linux_ioc_binary_exists():
-        pytest.skip(f"live IOC binary missing: {IOC_BINARY}")
-    if not linux_ca_tools_exist():
-        pytest.skip(f"EPICS CA tools missing: {CAGET} or {CAPUT}")
+    caget_path, caput_path = _resolve_live_prerequisites()
 
     tmp_path = Path(tempfile.mkdtemp(prefix="ls336-ioc-"))
     mock_process = None
@@ -354,6 +413,8 @@ def running_ioc():
         running = RunningIOC(
             prefix=LIVE_PREFIX,
             ca_env=CA_ENV.copy(),
+            caget_path=caget_path,
+            caput_path=caput_path,
             command_log=command_log,
             slave_keepalive_fd=slave_keepalive_fd,
             ioc_process=ioc_process,
@@ -391,8 +452,11 @@ def test_running_ioc_startup_failure_cleans_up_mock_process(monkeypatch):
 
     monkeypatch.setattr(module, "os", SimpleNamespace(name="posix", close=os.close))
     monkeypatch.setattr(tempfile, "mkdtemp", lambda prefix: str(startup_dir))
-    monkeypatch.setattr(module, "linux_ioc_binary_exists", lambda: True)
-    monkeypatch.setattr(module, "linux_ca_tools_exist", lambda: True)
+    monkeypatch.setattr(
+        module,
+        "_resolve_live_prerequisites",
+        lambda: (Path("/tmp/caget"), Path("/tmp/caput")),
+    )
     monkeypatch.setattr(
         module,
         "_start_mock_server",
@@ -467,6 +531,77 @@ def test_model336state_rejects_unsupported_and_malformed_commands():
     ]:
         with pytest.raises(ValueError):
             state.handle(command)
+
+
+@pytest.mark.parametrize(
+    ("assignment", "expected"),
+    [
+        ("EPICS_BASE=/custom/epics/base\n", Path("/custom/epics/base")),
+        ("EPICS_BASE ?= /srv/epics/base\n", Path("/srv/epics/base")),
+        ("  EPICS_BASE   =   /opt/EPICS Base  \n", Path("/opt/EPICS Base")),
+    ],
+)
+def test_release_local_epics_base_parser_supports_make_assignment_forms(
+    tmp_path, assignment, expected
+):
+    release_local = tmp_path / "RELEASE.local"
+    release_local.write_text(f"ASYN=/unused\n{assignment}", encoding="utf-8")
+
+    assert _read_epics_base(release_local) == expected
+
+
+def test_live_prerequisites_fail_when_release_local_is_missing(monkeypatch, tmp_path):
+    module = sys.modules[__name__]
+    ioc_binary = tmp_path / "ls336"
+    ioc_binary.touch()
+    monkeypatch.setattr(module, "RELEASE_LOCAL", tmp_path / "missing-RELEASE.local")
+    monkeypatch.setattr(module, "IOC_BINARY", ioc_binary)
+
+    with pytest.raises(pytest.fail.Exception, match="RELEASE.local"):
+        _resolve_live_prerequisites()
+
+
+def test_live_prerequisites_fail_when_ioc_binary_is_missing(monkeypatch, tmp_path):
+    module = sys.modules[__name__]
+    release_local = tmp_path / "RELEASE.local"
+    release_local.write_text(f"EPICS_BASE={tmp_path / 'epics'}\n", encoding="utf-8")
+    monkeypatch.setattr(module, "RELEASE_LOCAL", release_local)
+    monkeypatch.setattr(module, "IOC_BINARY", tmp_path / "missing-ls336")
+
+    with pytest.raises(pytest.fail.Exception, match="IOC binary missing"):
+        _resolve_live_prerequisites()
+
+
+@pytest.mark.parametrize(("present_tool", "missing_name"), [("caput", "caget"), ("caget", "caput")])
+def test_live_prerequisites_fail_when_ca_tool_is_missing(
+    monkeypatch, tmp_path, present_tool, missing_name
+):
+    module = sys.modules[__name__]
+    epics_base = tmp_path / "EPICS Base"
+    tool_dir = epics_base / "bin" / "linux-x86_64"
+    tool_dir.mkdir(parents=True)
+    (tool_dir / present_tool).touch()
+    release_local = tmp_path / "RELEASE.local"
+    release_local.write_text(f"EPICS_BASE ?= {epics_base}\n", encoding="utf-8")
+    ioc_binary = tmp_path / "ls336"
+    ioc_binary.touch()
+    monkeypatch.setattr(module, "RELEASE_LOCAL", release_local)
+    monkeypatch.setattr(module, "IOC_BINARY", ioc_binary)
+
+    with pytest.raises(pytest.fail.Exception, match=missing_name):
+        _resolve_live_prerequisites()
+
+
+def test_running_ioc_skips_windows_before_live_path_checks(monkeypatch, tmp_path):
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(module, "RELEASE_LOCAL", tmp_path / "missing-RELEASE.local")
+    monkeypatch.setattr(module, "IOC_BINARY", tmp_path / "missing-ls336")
+
+    fixture_gen = running_ioc.__wrapped__()
+
+    with pytest.raises(pytest.skip.Exception, match="require POSIX"):
+        next(fixture_gen)
 
 
 def test_run_tests_script_has_ioc_integration_entry_point():
@@ -597,6 +732,7 @@ def test_live_ioc_startup_reads_identity(running_ioc):
         and entry["command"].startswith(("SETP ", "RAMP ", "RANGE "))
     ]
     assert writes == []
+    assert "String is too long" not in running_ioc.diagnostics()
 
 
 def test_live_ioc_setpoint_boundaries_and_invalid_writes(running_ioc):
@@ -616,7 +752,7 @@ def test_live_ioc_setpoint_boundaries_and_invalid_writes(running_ioc):
             interval=0.1,
         )
 
-    for value in (-0.001, 350.001):
+    for value in (-0.001, 350.001, float("nan")):
         mark = running_ioc.mark()
         running_ioc.caput("Loop1:SETP", value)
         _assert_alarm_and_error(
@@ -624,11 +760,7 @@ def test_live_ioc_setpoint_boundaries_and_invalid_writes(running_ioc):
             "Loop1:SETP",
             "Setpoint must be within 0..350 K",
         )
-        assert [
-            entry["command"]
-            for entry in running_ioc.commands_since(mark)
-            if entry.get("command", "").startswith("SETP 1,")
-        ] == []
+        _assert_no_matching_write(running_ioc, mark, "SETP 1,")
 
     assert running_ioc.caget_float("Loop1:SETP_RBV") == pytest.approx(350.0, abs=0.01)
 
@@ -666,7 +798,7 @@ def test_live_ioc_ramp_preserves_query_state_and_rejects_invalid_rate(running_io
             interval=0.1,
         )
 
-    for value in (-0.001, 10.001):
+    for value in (-0.001, 10.001, float("nan")):
         mark = running_ioc.mark()
         running_ioc.caput("Loop1:RAMP:RATE", value)
         _assert_alarm_and_error(
@@ -674,14 +806,43 @@ def test_live_ioc_ramp_preserves_query_state_and_rejects_invalid_rate(running_io
             "Loop1:RAMP:RATE",
             "Ramp rate must be within 0..10 K/min",
         )
-        assert [
-            entry["command"]
-            for entry in running_ioc.commands_since(mark)
-            if entry.get("command", "").startswith("RAMP 1,")
-        ] == []
+        _assert_no_matching_write(running_ioc, mark, "RAMP 1,")
 
     assert running_ioc.caget_float("Loop1:RAMP:ENABLE_RBV") == pytest.approx(1, abs=0.01)
     assert running_ioc.caget_float("Loop1:RAMP:RATE_RBV") == pytest.approx(10.0, abs=0.01)
+
+
+def test_live_ioc_ramp_enable_rejects_non_enum_values_and_guards_writer(running_ioc):
+    mark = running_ioc.mark()
+    running_ioc.caput("Loop1:RAMP:ENABLE", 1)
+    running_ioc.wait_for(
+        "initial ramp enable write",
+        lambda: _has_ramp_write_pair(running_ioc.commands_since(mark), 1, 1.5),
+        timeout=3.0,
+        interval=0.1,
+    )
+
+    for value in (-1, 1.5, 2, 65536, float("nan")):
+        mark = running_ioc.mark()
+        running_ioc.caput("Loop1:RAMP:ENABLE", value)
+        _assert_alarm_and_error(
+            running_ioc,
+            "Loop1:RAMP:ENABLE",
+            "Ramp enable must be 0 or 1",
+        )
+        _assert_no_matching_write(running_ioc, mark, "RAMP 1,")
+        assert running_ioc.caget_float("Loop1:RAMP:ENABLE_RBV") == pytest.approx(
+            1, abs=0.01
+        )
+
+    mark = running_ioc.mark()
+    running_ioc.caput("Loop1:RAMP:ENABLE:WRITE.PROC", 1)
+    _assert_alarm_and_error(
+        running_ioc,
+        "Loop1:RAMP:ENABLE:WRITE",
+        "Ramp enable must be 0 or 1",
+    )
+    _assert_no_matching_write(running_ioc, mark, "RAMP 1,")
 
 
 def test_live_ioc_range_boundaries_and_invalid_write(running_ioc):
@@ -704,17 +865,38 @@ def test_live_ioc_range_boundaries_and_invalid_write(running_ioc):
             interval=0.1,
         )
 
-    mark = running_ioc.mark()
-    running_ioc.caput("Loop1:RANGE", 4)
-    _assert_alarm_and_error(
-        running_ioc,
-        "Loop1:RANGE",
-        "Heater range must be within 0..3",
-    )
-    assert [
-        entry["command"]
-        for entry in running_ioc.commands_since(mark)
-        if entry.get("command", "").startswith("RANGE 1,")
-    ] == []
+    for value in (-1, 1.5, 4, 65536, float("nan")):
+        mark = running_ioc.mark()
+        running_ioc.caput("Loop1:RANGE", value)
+        _assert_alarm_and_error(
+            running_ioc,
+            "Loop1:RANGE",
+            "Heater range must be within 0..3",
+        )
+        _assert_no_matching_write(running_ioc, mark, "RANGE 1,")
+        assert running_ioc.caget_float("Loop1:RANGE_RBV") == pytest.approx(3, abs=0.01)
 
     assert running_ioc.caget_float("Loop1:RANGE_RBV") == pytest.approx(3, abs=0.01)
+
+    mark = running_ioc.mark()
+    running_ioc.caput("Loop1:RANGE:WRITE.PROC", 1)
+    _assert_alarm_and_error(
+        running_ioc,
+        "Loop1:RANGE:WRITE",
+        "Heater range must be within 0..3",
+    )
+    _assert_no_matching_write(running_ioc, mark, "RANGE 1,")
+
+
+def test_live_ioc_disconnect_updates_communication_error(running_ioc):
+    _stop_process(running_ioc.mock_process)
+
+    running_ioc.wait_for(
+        "communication failure summary after mock disconnect",
+        lambda: (
+            running_ioc.caget_float("COMM:STATUS") in (0.0, 2.0)
+            and running_ioc.caget_str("ERR") == "Communication failure; inspect alarms"
+        ),
+        timeout=12.0,
+        interval=0.2,
+    )
