@@ -1,8 +1,16 @@
 # Lake Shore 336 EPICS IOC
 
-This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes readback PVs for the cold head and sample temperatures, plus conservative Loop 1 setpoint and ramp controls for higher-level clients and local dashboards.
+This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes `LS336:IDN`, canonical `LS336:Input:A:TEMP_RBV` through `LS336:Input:D:TEMP_RBV` readbacks, true aliases `LS336:ColdHead:TEMP_RBV` and `LS336:Sample:TEMP_RBV`, the read-only `LS336:Loop1:INPUT_RBV` control-input state, conservative Loop 1 setpoint/ramp/range commands plus matching readbacks, heater output, PID readbacks, communication state, and IOC error text.
 
 For an operator-facing Chinese tutorial, see [`docs/operator_tutorial_zh.md`](docs/operator_tutorial_zh.md).
+
+## Phase 1 IOC Scope
+
+The EPICS IOC is the sole hardware connection owner in Phase 1. Direct Windows dashboards, the local web dashboard, and the portable ZIP package may only talk to hardware while the IOC is stopped. Stop the IOC before opening the direct Windows dashboard, the local web dashboard, or the portable packaged app against the same controller.
+
+Phase 1 does not convert the existing logger into EPICS records. The logging, maintenance login, packaged offline app, and direct `CSET` workflow described in the dashboard sections below remain part of the separate Python applications, not the IOC.
+
+For the IOC itself, the Phase 1 parser uses `OUTMODE? 1` only to publish the read-only `LS336:Loop1:INPUT_RBV` state. The EPICS IOC does not write `CSET` in Phase 1.
 
 ## Target Setup
 
@@ -17,7 +25,7 @@ Edit `configure/RELEASE.local` or pass macros at IOC start time if your EPICS mo
 
 ## Windows Direct Dashboard
 
-If the control computer must stay Windows-only, use the direct serial dashboard. It talks to the Lake Shore 336 over a Windows COM port and does not require Linux, WSL, EPICS, `caget`, or `caput`.
+If the control computer must stay Windows-only, use the direct serial dashboard. This section describes the separate direct application, not the EPICS IOC. It talks to the Lake Shore 336 over a Windows COM port and does not require Linux, WSL, EPICS, `caget`, or `caput`.
 
 The friendliest path is to double-click this file from the repository folder:
 
@@ -160,25 +168,46 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 
 | PV | Direction | Purpose |
 | --- | --- | --- |
-| `LS336:ColdHead:TEMP_RBV` | read | Input A temperature, mapped to cold head temperature. |
-| `LS336:Sample:TEMP_RBV` | read | Input B temperature, mapped to sample-side temperature. |
-| `LS336:Loop1:SETP` | write | Requested Loop 1 setpoint in K. Limited to 350 K. |
-| `LS336:Loop1:SETP_RBV` | read | Loop 1 setpoint read back from the controller. |
-| `LS336:Loop1:RAMP:ENABLE` | write | Enable or disable Loop 1 ramping. |
-| `LS336:Loop1:RAMP:ENABLE_RBV` | read | Ramp enable state read back from the controller. |
-| `LS336:Loop1:RAMP:RATE` | write | Requested Loop 1 ramp rate in K/min. Limited to 10 K/min. |
-| `LS336:Loop1:RAMP:RATE_RBV` | read | Loop 1 ramp rate read back from the controller. |
+| `LS336:IDN` | read | Instrument identity from `*IDN?`. |
+| `LS336:Input:A:TEMP_RBV` | read | Canonical Input A temperature readback. |
+| `LS336:Input:B:TEMP_RBV` | read | Canonical Input B temperature readback. |
+| `LS336:Input:C:TEMP_RBV` | read | Canonical Input C temperature readback. |
+| `LS336:Input:D:TEMP_RBV` | read | Canonical Input D temperature readback. |
+| `LS336:ColdHead:TEMP_RBV` | read alias | True EPICS alias of `LS336:Input:A:TEMP_RBV`. |
+| `LS336:Sample:TEMP_RBV` | read alias | True EPICS alias of `LS336:Input:B:TEMP_RBV`. |
+| `LS336:Loop1:INPUT_RBV` | read | Read-only Loop 1 control-input state parsed from `OUTMODE? 1`. |
+| `LS336:Loop1:SETP` | write | Loop 1 setpoint command PV. |
+| `LS336:Loop1:SETP_RBV` | read | Authoritative Loop 1 setpoint readback. |
+| `LS336:Loop1:RAMP:ENABLE` | write | Loop 1 ramp-enable command PV. |
+| `LS336:Loop1:RAMP:ENABLE_RBV` | read | Authoritative ramp-enable readback. |
+| `LS336:Loop1:RAMP:RATE` | write | Loop 1 ramp-rate command PV. |
+| `LS336:Loop1:RAMP:RATE_RBV` | read | Authoritative ramp-rate readback. |
+| `LS336:Loop1:RANGE` | write | Loop 1 heater-range command PV. |
+| `LS336:Loop1:RANGE_RBV` | read | Authoritative heater-range readback. |
 | `LS336:Loop1:HTR_RBV` | read | Loop 1 heater output percentage. |
-| `LS336:COMM:STATUS` | read | IOC communication status. |
+| `LS336:Loop1:PID:P_RBV` | read | Read-only Loop 1 PID proportional readback. |
+| `LS336:Loop1:PID:I_RBV` | read | Read-only Loop 1 PID integral readback. |
+| `LS336:Loop1:PID:D_RBV` | read | Read-only Loop 1 PID derivative readback. |
+| `LS336:COMM:STATUS` | read | IOC communication summary. States are `Disconnected`, `Connected`, and `Error`. |
 | `LS336:ERR` | read | Last IOC-side validation or communication message. |
+
+## Phase 1 IOC Behavior
+
+Startup sends queries only and never issues `SETP`, `RAMP`, or `RANGE`. All public output records use `PINI` = `NO`, so IOC boot cannot silently change hardware setpoints, ramp state, ramp rate, or heater range.
+
+A successful command PV write only confirms IOC processing; it is not hardware confirmation. Independent readback PVs such as `LS336:Loop1:SETP_RBV`, `LS336:Loop1:RAMP:ENABLE_RBV`, `LS336:Loop1:RAMP:RATE_RBV`, and `LS336:Loop1:RANGE_RBV` are authoritative.
+
+Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the current hardware enable bit. Changing `LS336:Loop1:RAMP:ENABLE` first queries `RAMP? 1` and preserves the current hardware rate. Each update is emitted as one locked StreamDevice transaction.
 
 ## Safety Limits
 
-The public write PVs use conservative defaults:
+The public write PVs use conservative commissioning defaults:
 
-- `LS336:Loop1:SETP` is limited to `350 K`.
-- `LS336:Loop1:RAMP:RATE` is limited to `10 K/min`.
-- The database includes `validate_setpoint` and `validate_ramp_rate` calculation records so limit behavior is explicit in the IOC database.
+- `LS336:Loop1:SETP` accepts `0..350 K`.
+- `LS336:Loop1:RAMP:RATE` accepts `0..10 K/min`.
+- `LS336:Loop1:RANGE` accepts `0..3`.
+- Out-of-range writes are blocked by `SDIS` before StreamDevice sends any serial command.
+- The integration tests check for zero serial output on rejected `SETP`, `RAMP`, and `RANGE` writes.
 
 These limits are intended for first commissioning only. Tighten them for the actual sample, cryostat, and heater configuration before routine use.
 
@@ -223,6 +252,15 @@ make
 bash scripts/check_ioc_ready.sh
 ```
 
+Useful Phase 1 verification commands:
+
+- `pytest -q`
+- `make`
+- `bash scripts/run_tests.sh --ioc-integration`
+- `wsl -d Ubuntu-24.04 -- bash -lc 'cd /mnt/d/Projects/LakeShore336 && bash scripts/run_tests.sh --ioc-integration'`
+
+The PTY shim is test-only; production `iocBoot/iocLS336/st.cmd` keeps the real controller at `57600 7O1`.
+
 ## Run On Linux
 
 This IOC should be run from Linux. On a Mac, use an Ubuntu virtual machine if you need a Linux runtime. The build no longer assumes only `linux-x86_64`; it uses the EPICS host architecture produced by your Linux environment.
@@ -246,14 +284,63 @@ PREFIX=LS336_DEV: TTY=/dev/ttyUSB0 bash scripts/run_ioc.sh
 
 ## EPICS Client Checks
 
-Read both temperature channels:
+Read identity, canonical temperatures, aliases, and communication state:
 
 ```bash
 caget LS336:IDN
+caget LS336:Input:A:TEMP_RBV
+caget LS336:Input:B:TEMP_RBV
+caget LS336:Input:C:TEMP_RBV
+caget LS336:Input:D:TEMP_RBV
 caget LS336:ColdHead:TEMP_RBV
 caget LS336:Sample:TEMP_RBV
+caget LS336:Loop1:INPUT_RBV
 caget LS336:COMM:STATUS
 ```
+
+## Hardware Commissioning Checklist
+
+1. Confirm query-only startup and the basic readback path.
+
+```bash
+caget LS336:IDN
+caget LS336:Input:A:TEMP_RBV
+caget LS336:Input:B:TEMP_RBV
+caget LS336:Input:C:TEMP_RBV
+caget LS336:Input:D:TEMP_RBV
+caget LS336:ColdHead:TEMP_RBV
+caget LS336:Sample:TEMP_RBV
+caget LS336:Loop1:INPUT_RBV
+caget LS336:COMM:STATUS
+```
+
+2. Send a safe setpoint and verify the authoritative readback.
+
+```bash
+caput LS336:Loop1:SETP 300
+caget LS336:Loop1:SETP_RBV
+```
+
+3. Enable ramping, set a conservative rate, and verify each command via the matching RBV.
+
+```bash
+caput LS336:Loop1:RAMP:ENABLE 1
+caput LS336:Loop1:RAMP:RATE 1
+caget LS336:Loop1:RAMP:ENABLE_RBV
+caget LS336:Loop1:RAMP:RATE_RBV
+```
+
+4. Set a cautious heater range, then check the range and heater-output readbacks. Use `Low` or `Off` until heater commissioning says otherwise.
+
+```bash
+caput LS336:Loop1:RANGE 1
+caget LS336:Loop1:RANGE_RBV
+caget LS336:Loop1:HTR_RBV
+```
+
+5. If the serial link drops, confirm `LS336:COMM:STATUS`, reconnect the USB/serial path, and wait for the authoritative RBVs to recover before sending another command.
+
+6. Keep the direct apps separate from the IOC. The direct Windows dashboard, browser dashboard, and portable ZIP can still be useful for their own workflows, including logging, but only while the IOC is stopped.
 
 ## Visual Dashboard
 
