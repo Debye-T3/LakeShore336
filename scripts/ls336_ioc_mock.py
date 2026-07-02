@@ -124,7 +124,7 @@ def _append_log(handle, command: str, response: str | None, error: str | None = 
     handle.flush()
 
 
-def serve_pty(command_log: Path | None = None) -> int:
+def serve_pty(command_log: Path | None = None, keep_slave_open: bool = False) -> int:
     if os.name != "posix":
         raise RuntimeError("PTY server requires POSIX")
 
@@ -149,8 +149,9 @@ def serve_pty(command_log: Path | None = None) -> int:
         attributes[3] &= ~(termios.ECHO | termios.ICANON)
         termios.tcsetattr(slave_fd, termios.TCSANOW, attributes)
         slave_path = os.ttyname(slave_fd)
-        os.close(slave_fd)
-        slave_fd = None
+        if not keep_slave_open:
+            os.close(slave_fd)
+            slave_fd = None
 
         if command_log is not None:
             command_log.parent.mkdir(parents=True, exist_ok=True)
@@ -211,13 +212,18 @@ def serve_pty(command_log: Path | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--command-log", type=Path, help="Append JSONL command log to PATH.")
+    parser.add_argument(
+        "--keep-slave-open",
+        action="store_true",
+        help="Keep the PTY slave file descriptor open for long-lived IOC sessions.",
+    )
     args = parser.parse_args(argv)
 
     if os.name != "posix":
         print("ls336_ioc_mock.py requires POSIX PTY support.", file=sys.stderr)
         return 1
 
-    return serve_pty(args.command_log)
+    return serve_pty(args.command_log, keep_slave_open=args.keep_slave_open)
 
 
 if __name__ == "__main__":
