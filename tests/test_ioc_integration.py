@@ -9,6 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,7 @@ MOCK_PATH = ROOT / "scripts" / "ls336_ioc_mock.py"
 RUN_TESTS_PATH = ROOT / "scripts" / "run_tests.sh"
 IOC_BINARY = ROOT / "bin" / "linux-x86_64" / "ls336"
 IOC_BOOT_DIR = ROOT / "iocBoot" / "iocLS336"
+PTY_TERMIOS_SHIM_SOURCE = ROOT / "tests" / "fixtures" / "pty_termios_shim.c"
 CAGET = Path("/opt/epics/base/bin/linux-x86_64/caget")
 CAPUT = Path("/opt/epics/base/bin/linux-x86_64/caput")
 LIVE_PREFIX = "LS336TEST:"
@@ -198,26 +200,48 @@ def _start_mock_server(tmp_path: Path) -> tuple[subprocess.Popen[str], str, Path
     return process, slave_path, command_log
 
 
-def _configure_slave_keepalive(fd: int) -> None:
-    import termios
-    import tty
-
-    tty.setraw(fd)
-    attributes = termios.tcgetattr(fd)
-    attributes[3] &= ~(termios.ECHO | termios.ICANON)
-    termios.tcsetattr(fd, termios.TCSANOW, attributes)
+def _open_serial_keepalive(slave_path: str) -> int:
+    return os.open(slave_path, os.O_RDWR | os.O_NOCTTY)
 
 
-def _write_test_startup_script(tmp_path: Path) -> Path:
-    source = (IOC_BOOT_DIR / "st.cmd").read_text(encoding="utf-8")
-    filtered_lines = [
-        line
-        for line in source.splitlines()
-        if not line.startswith('asynSetOption("$(PORT)", 0, ')
-    ]
-    script_path = tmp_path / "st.integration.cmd"
-    script_path.write_text("\n".join(filtered_lines) + "\n", encoding="utf-8")
-    return script_path
+def _compile_pty_termios_shim(tmp_path: Path) -> Path:
+    library_path = tmp_path / "pty_termios_shim.so"
+    result = subprocess.run(
+        [
+            "cc",
+            "-shared",
+            "-fPIC",
+            "-ldl",
+            "-o",
+            str(library_path),
+            str(PTY_TERMIOS_SHIM_SOURCE),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            "Failed to build PTY termios shim.\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    return library_path
+
+
+def _ioc_subprocess_env(slave_path: str, shim_path: Path) -> dict[str, str]:
+    preload_parts = [str(shim_path)]
+    existing_ld_preload = os.environ.get("LD_PRELOAD")
+    if existing_ld_preload:
+        preload_parts.append(existing_ld_preload)
+    return {
+        **os.environ,
+        **CA_ENV,
+        "TTY": slave_path,
+        "PREFIX": LIVE_PREFIX,
+        "LD_PRELOAD": ":".join(preload_parts),
+    }
 
 
 def _wait_for_ioc_ready(running_ioc: RunningIOC) -> None:
@@ -235,7 +259,6 @@ def _wait_for_ioc_ready(running_ioc: RunningIOC) -> None:
                 return
         time.sleep(0.2)
 
-    running_ioc.shutdown()
     pytest.fail(
         "IOC did not become ready via ColdHead:TEMP_RBV.\n"
         f"Last readiness error: {last_error}\n"
@@ -304,49 +327,99 @@ def running_ioc():
         pytest.skip(f"EPICS CA tools missing: {CAGET} or {CAPUT}")
 
     tmp_path = Path(tempfile.mkdtemp(prefix="ls336-ioc-"))
-    mock_process, slave_path, command_log = _start_mock_server(tmp_path)
-    slave_keepalive_fd = os.open(slave_path, os.O_RDWR | os.O_NOCTTY)
-    _configure_slave_keepalive(slave_keepalive_fd)
-    startup_script = _write_test_startup_script(tmp_path)
-    ioc_stdout_path = tmp_path / "ioc.stdout"
-    ioc_stderr_path = tmp_path / "ioc.stderr"
-    with ioc_stdout_path.open("w", encoding="utf-8") as ioc_stdout, ioc_stderr_path.open(
-        "w", encoding="utf-8"
-    ) as ioc_stderr:
-        ioc_process = subprocess.Popen(
-            [str(IOC_BINARY), str(startup_script)],
-            cwd=IOC_BOOT_DIR,
-            env={
-                **os.environ,
-                **CA_ENV,
-                "TTY": slave_path,
-                "PREFIX": LIVE_PREFIX,
-            },
-            stdin=subprocess.PIPE,
-            stdout=ioc_stdout,
-            stderr=ioc_stderr,
-            text=True,
-            bufsize=1,
+    mock_process = None
+    ioc_process = None
+    slave_keepalive_fd = -1
+    running = None
+    try:
+        mock_process, slave_path, command_log = _start_mock_server(tmp_path)
+        shim_path = _compile_pty_termios_shim(tmp_path)
+        ioc_stdout_path = tmp_path / "ioc.stdout"
+        ioc_stderr_path = tmp_path / "ioc.stderr"
+        with ioc_stdout_path.open("w", encoding="utf-8") as ioc_stdout, ioc_stderr_path.open(
+            "w", encoding="utf-8"
+        ) as ioc_stderr:
+            ioc_process = subprocess.Popen(
+                [str(IOC_BINARY), "st.cmd"],
+                cwd=IOC_BOOT_DIR,
+                env=_ioc_subprocess_env(slave_path, shim_path),
+                stdin=subprocess.PIPE,
+                stdout=ioc_stdout,
+                stderr=ioc_stderr,
+                text=True,
+                bufsize=1,
+            )
+        slave_keepalive_fd = _open_serial_keepalive(slave_path)
+
+        running = RunningIOC(
+            prefix=LIVE_PREFIX,
+            ca_env=CA_ENV.copy(),
+            command_log=command_log,
+            slave_keepalive_fd=slave_keepalive_fd,
+            ioc_process=ioc_process,
+            mock_process=mock_process,
+            ioc_stdout_path=ioc_stdout_path,
+            ioc_stderr_path=ioc_stderr_path,
+            mock_stderr_path=tmp_path / "mock.stderr",
         )
 
-    running = RunningIOC(
-        prefix=LIVE_PREFIX,
-        ca_env=CA_ENV.copy(),
-        command_log=command_log,
-        slave_keepalive_fd=slave_keepalive_fd,
-        ioc_process=ioc_process,
-        mock_process=mock_process,
-        ioc_stdout_path=ioc_stdout_path,
-        ioc_stderr_path=ioc_stderr_path,
-        mock_stderr_path=tmp_path / "mock.stderr",
-    )
+        _wait_for_ioc_ready(running)
+    except BaseException:
+        if ioc_process is not None:
+            _stop_process(ioc_process, stdin_text="exit\n")
+        if mock_process is not None:
+            _stop_process(mock_process)
+        if slave_keepalive_fd >= 0:
+            os.close(slave_keepalive_fd)
+            slave_keepalive_fd = -1
+        shutil.rmtree(tmp_path, ignore_errors=True)
+        raise
 
     try:
-        _wait_for_ioc_ready(running)
         yield running
     finally:
+        assert running is not None
         running.shutdown()
         shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_running_ioc_startup_failure_cleans_up_mock_process(monkeypatch):
+    cleanup_calls: list[object] = []
+    module = sys.modules[__name__]
+    mock_process = object()
+    startup_dir = Path("C:/ls336-fixture-startup")
+
+    monkeypatch.setattr(module, "os", SimpleNamespace(name="posix", close=os.close))
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda prefix: str(startup_dir))
+    monkeypatch.setattr(module, "linux_ioc_binary_exists", lambda: True)
+    monkeypatch.setattr(module, "linux_ca_tools_exist", lambda: True)
+    monkeypatch.setattr(
+        module,
+        "_start_mock_server",
+        lambda path: (mock_process, "/tmp/fake-tty", path / "mock.jsonl"),
+    )
+
+    def fail_compile(_: Path) -> Path:
+        pytest.fail("forced")
+
+    monkeypatch.setattr(module, "_compile_pty_termios_shim", fail_compile)
+    monkeypatch.setattr(
+        module,
+        "_stop_process",
+        lambda process, stdin_text=None: cleanup_calls.append(process),
+    )
+    monkeypatch.setattr(
+        module.shutil,
+        "rmtree",
+        lambda path, ignore_errors=True: cleanup_calls.append(("rmtree", Path(path))),
+    )
+
+    fixture_gen = running_ioc.__wrapped__()
+
+    with pytest.raises(pytest.fail.Exception, match="forced"):
+        next(fixture_gen)
+
+    assert cleanup_calls == [mock_process, ("rmtree", startup_dir)]
 
 
 def test_model336state_defaults_match_phase_one_contract():

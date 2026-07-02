@@ -322,10 +322,33 @@ def test_startup_script_configures_serial_port_for_wsl_defaults():
     assert 'epicsEnvSet("TTY", "$(TTY=/dev/ttyUSB0)")' in startup
     assert 'epicsEnvSet("PREFIX", "$(PREFIX=LS336:)")' in startup
     assert 'drvAsynSerialPortConfigure("$(PORT)", "$(TTY)", 0, 0, 0)' in startup
-    assert 'asynSetOption("$(PORT)", 0, "baud", "57600")' in startup
-    assert 'asynSetOption("$(PORT)", 0, "bits", "7")' in startup
-    assert 'asynSetOption("$(PORT)", 0, "parity", "odd")' in startup
-    assert 'asynSetOption("$(PORT)", 0, "stop", "1")' in startup
+    expected_serial_block = """asynSetOption("$(PORT)", 0, "baud", "57600")
+asynSetOption("$(PORT)", 0, "bits", "7")
+asynSetOption("$(PORT)", 0, "parity", "odd")
+asynSetOption("$(PORT)", 0, "stop", "1")
+asynSetOption("$(PORT)", 0, "clocal", "Y")
+asynSetOption("$(PORT)", 0, "crtscts", "N")"""
+    assert expected_serial_block in startup
+
+
+def test_pty_termios_shim_fixture_advertises_lakeshore_serial_settings():
+    shim = read("tests/fixtures/pty_termios_shim.c")
+
+    for snippet in [
+        "int ioctl(int fd, unsigned long request, ...)",
+        "int tcsetattr(int fd, int optional_actions, const struct termios *t)",
+        'strncmp(target, "/dev/pts/", 9) == 0',
+        "request == TCGETS",
+        "t->c_ispeed = B57600;",
+        "t->c_ospeed = B57600;",
+        "t->c_cflag |= PARENB | PARODD | CLOCAL | CREAD;",
+        "t->c_cflag &= ~CSIZE;",
+        "t->c_cflag |= CS7;",
+        "t->c_cflag &= ~CSTOPB;",
+    ]:
+        assert snippet in shim
+
+    assert "CRTSCTS" in shim
 
 
 def test_ioc_source_makefile_builds_main_and_links_tirpc():

@@ -124,14 +124,32 @@ def _append_log(handle, command: str, response: str | None, error: str | None = 
     handle.flush()
 
 
+def _configure_model336_serial(slave_fd: int) -> None:
+    import termios
+    import tty
+
+    tty.setraw(slave_fd)
+    attributes = termios.tcgetattr(slave_fd)
+    attributes[0] = 0
+    attributes[1] = 0
+    attributes[2] |= termios.CLOCAL | termios.CREAD | termios.PARENB | termios.PARODD
+    attributes[2] &= ~termios.CSIZE
+    attributes[2] |= termios.CS7
+    attributes[2] &= ~termios.CSTOPB
+    attributes[2] &= ~getattr(termios, "CRTSCTS", 0)
+    attributes[3] &= ~(termios.ECHO | termios.ICANON)
+    attributes[4] = termios.B57600
+    attributes[5] = termios.B57600
+    attributes[6][termios.VMIN] = 1
+    attributes[6][termios.VTIME] = 0
+    termios.tcsetattr(slave_fd, termios.TCSANOW, attributes)
+
+
 def serve_pty(command_log: Path | None = None, keep_slave_open: bool = False) -> int:
     if os.name != "posix":
         raise RuntimeError("PTY server requires POSIX")
 
     import pty
-    import termios
-    import tty
-
     master_fd, slave_fd = pty.openpty()
     state = Model336State()
     running = True
@@ -144,10 +162,7 @@ def serve_pty(command_log: Path | None = None, keep_slave_open: bool = False) ->
         running = False
 
     try:
-        tty.setraw(slave_fd)
-        attributes = termios.tcgetattr(slave_fd)
-        attributes[3] &= ~(termios.ECHO | termios.ICANON)
-        termios.tcsetattr(slave_fd, termios.TCSANOW, attributes)
+        _configure_model336_serial(slave_fd)
         slave_path = os.ttyname(slave_fd)
         if not keep_slave_open:
             os.close(slave_fd)
