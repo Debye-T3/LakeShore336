@@ -104,21 +104,10 @@ record(ai, "$(P)Loop1:RAMP:RATE:CACHE") {
 
 record(ao, "$(P)Loop1:RAMP:ENABLE") {
     field(DESC, "Loop 1 ramp enable command")
-    field(LOPR, "0")
-    field(HOPR, "1")
-    field(PINI, "NO")
-    field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")
-    field(DISV, "1")
-    field(DISS, "INVALID")
-    field(FLNK, "$(P)Loop1:RAMP:ENABLE:WRITE")
-}
-
-record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE") {
-    field(DESC, "Private ramp enable writer")
     field(DTYP, "stream")
     field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")
-    field(DOL,  "$(P)Loop1:RAMP:ENABLE.VAL NPP NMS")
-    field(OMSL, "closed_loop")
+    field(LOPR, "0")
+    field(HOPR, "1")
     field(PINI, "NO")
     field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")
     field(DISV, "1")
@@ -187,21 +176,10 @@ record(stringout, "$(P)ERR:RAMP") {
 
 record(ao, "$(P)Loop1:RANGE") {
     field(DESC, "Loop 1 heater range command")
-    field(LOPR, "0")
-    field(HOPR, "3")
-    field(PINI, "NO")
-    field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
-    field(DISV, "1")
-    field(DISS, "INVALID")
-    field(FLNK, "$(P)Loop1:RANGE:WRITE")
-}
-
-record(ao, "$(P)Loop1:RANGE:WRITE") {
-    field(DESC, "Private heater range writer")
     field(DTYP, "stream")
     field(OUT,  "@ls336.proto setRange $(PORT)")
-    field(DOL,  "$(P)Loop1:RANGE.VAL NPP NMS")
-    field(OMSL, "closed_loop")
+    field(LOPR, "0")
+    field(HOPR, "3")
     field(PINI, "NO")
     field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
     field(DISV, "1")

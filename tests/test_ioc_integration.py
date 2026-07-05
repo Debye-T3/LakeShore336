@@ -366,6 +366,32 @@ def _assert_alarm_and_error(
         ) from exc
 
 
+def _assert_write_failure_alarm(
+    running_ioc: RunningIOC, record: str, timeout: float = 5.0
+) -> None:
+    observed: dict[str, str] = {}
+
+    def write_failure_alarm_matches() -> bool:
+        observed["STAT"] = running_ioc.caget_str(f"{record}.STAT")
+        observed["SEVR"] = running_ioc.caget_str(f"{record}.SEVR")
+        return (
+            observed["STAT"] in {"COMM", "WRITE", "TIMEOUT"}
+            and observed["SEVR"] == "INVALID"
+        )
+
+    try:
+        running_ioc.wait_for(
+            f"{record} communication/write INVALID alarm",
+            write_failure_alarm_matches,
+            timeout=timeout,
+            interval=0.1,
+        )
+    except AssertionError as exc:
+        raise AssertionError(
+            f"{exc}; last values: {observed}\n{running_ioc.diagnostics()}"
+        ) from exc
+
+
 def _assert_no_matching_write(
     running_ioc: RunningIOC, mark: int, command_prefix: str
 ) -> None:
@@ -812,7 +838,7 @@ def test_live_ioc_ramp_preserves_query_state_and_rejects_invalid_rate(running_io
     assert running_ioc.caget_float("Loop1:RAMP:RATE_RBV") == pytest.approx(10.0, abs=0.01)
 
 
-def test_live_ioc_ramp_enable_rejects_non_enum_values_and_guards_writer(running_ioc):
+def test_live_ioc_ramp_enable_rejects_non_enum_values(running_ioc):
     mark = running_ioc.mark()
     running_ioc.caput("Loop1:RAMP:ENABLE", 1)
     running_ioc.wait_for(
@@ -834,15 +860,6 @@ def test_live_ioc_ramp_enable_rejects_non_enum_values_and_guards_writer(running_
         assert running_ioc.caget_float("Loop1:RAMP:ENABLE_RBV") == pytest.approx(
             1, abs=0.01
         )
-
-    mark = running_ioc.mark()
-    running_ioc.caput("Loop1:RAMP:ENABLE:WRITE.PROC", 1)
-    _assert_alarm_and_error(
-        running_ioc,
-        "Loop1:RAMP:ENABLE:WRITE",
-        "Ramp enable must be 0 or 1",
-    )
-    _assert_no_matching_write(running_ioc, mark, "RAMP 1,")
 
 
 def test_live_ioc_range_boundaries_and_invalid_write(running_ioc):
@@ -878,15 +895,6 @@ def test_live_ioc_range_boundaries_and_invalid_write(running_ioc):
 
     assert running_ioc.caget_float("Loop1:RANGE_RBV") == pytest.approx(3, abs=0.01)
 
-    mark = running_ioc.mark()
-    running_ioc.caput("Loop1:RANGE:WRITE.PROC", 1)
-    _assert_alarm_and_error(
-        running_ioc,
-        "Loop1:RANGE:WRITE",
-        "Heater range must be within 0..3",
-    )
-    _assert_no_matching_write(running_ioc, mark, "RANGE 1,")
-
 
 def test_live_ioc_disconnect_updates_communication_error(running_ioc):
     _stop_process(running_ioc.mock_process)
@@ -894,9 +902,21 @@ def test_live_ioc_disconnect_updates_communication_error(running_ioc):
     running_ioc.wait_for(
         "communication failure summary after mock disconnect",
         lambda: (
-            running_ioc.caget_float("COMM:STATUS") in (0.0, 2.0)
+            running_ioc.caget_float("COMM:STATUS") == 0.0
             and running_ioc.caget_str("ERR") == "Communication failure; inspect alarms"
         ),
         timeout=12.0,
         interval=0.2,
     )
+
+
+def test_live_ioc_public_commands_alarm_after_disconnect(running_ioc):
+    _stop_process(running_ioc.mock_process)
+
+    for record, value in [
+        ("Loop1:SETP", 10),
+        ("Loop1:RAMP:ENABLE", 1),
+        ("Loop1:RANGE", 2),
+    ]:
+        running_ioc.caput(record, value)
+        _assert_write_failure_alarm(running_ioc, record)

@@ -49,12 +49,10 @@ def test_database_exposes_simplified_phase_one_pvs():
         'record(ao, "$(P)Loop1:SETP")',
         'record(ai, "$(P)Loop1:SETP_RBV")',
         'record(ao, "$(P)Loop1:RAMP:ENABLE")',
-        'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")',
         'record(bi, "$(P)Loop1:RAMP:ENABLE_RBV")',
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'record(ai, "$(P)Loop1:RAMP:RATE_RBV")',
         'record(ao, "$(P)Loop1:RANGE")',
-        'record(ao, "$(P)Loop1:RANGE:WRITE")',
         'record(mbbi, "$(P)Loop1:RANGE_RBV")',
         'record(ai, "$(P)Loop1:HTR_RBV")',
         'record(ai, "$(P)Loop1:PID:P_RBV")',
@@ -69,6 +67,8 @@ def test_database_exposes_simplified_phase_one_pvs():
 
     assert 'record(ai, "$(P)ColdHead:TEMP_RBV")' not in db
     assert 'record(ai, "$(P)Sample:TEMP_RBV")' not in db
+    assert 'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")' not in db
+    assert 'record(ao, "$(P)Loop1:RANGE:WRITE")' not in db
 
 
 def test_phase_one_readback_enums_use_approved_labels():
@@ -148,7 +148,6 @@ def test_ramp_write_database_uses_private_caches_and_public_validation():
         'record(longin, "$(P)Loop1:RAMP:ENABLE:CACHE")',
         'record(ai, "$(P)Loop1:RAMP:RATE:CACHE")',
         'record(ao, "$(P)Loop1:RAMP:ENABLE")',
-        'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")',
         'field(OUT,  "@ls336.proto setRampEnable($(P)) $(PORT)")',
         'record(ao, "$(P)Loop1:RAMP:RATE")',
         'field(OUT,  "@ls336.proto setRampRate($(P)) $(PORT)")',
@@ -170,53 +169,42 @@ def test_ramp_write_database_uses_private_caches_and_public_validation():
         assert snippet in db
 
 
-def test_enum_commands_stage_raw_values_before_guarded_private_writers():
+def test_enum_commands_write_directly_from_guarded_public_records():
     db = read("ls336App/Db/ls336.db")
 
     commands = [
         (
             "$(P)Loop1:RAMP:ENABLE",
-            "$(P)Loop1:RAMP:ENABLE:WRITE",
             "$(P)Loop1:RAMP:ENABLE:INVALID",
             "1",
             "@ls336.proto setRampEnable($(P)) $(PORT)",
         ),
         (
             "$(P)Loop1:RANGE",
-            "$(P)Loop1:RANGE:WRITE",
             "$(P)Loop1:RANGE:INVALID",
             "3",
             "@ls336.proto setRange $(PORT)",
         ),
     ]
-    for public_name, writer_name, invalid_name, hopr, protocol in commands:
+    for public_name, invalid_name, hopr, protocol in commands:
         public = record_block(db, public_name)
-        writer = record_block(db, writer_name)
 
         for snippet in [
+            'field(DTYP, "stream")',
+            f'field(OUT,  "{protocol}")',
             'field(LOPR, "0")',
             f'field(HOPR, "{hopr}")',
             'field(PINI, "NO")',
             f'field(SDIS, "{invalid_name} PP MS")',
             'field(DISV, "1")',
             'field(DISS, "INVALID")',
-            f'field(FLNK, "{writer_name}")',
         ]:
             assert snippet in public
-        for field in ["DTYP", "OUT", "DRVH", "DRVL"]:
+        for field in ["FLNK", "DOL", "OMSL", "DRVH", "DRVL"]:
             assert f"field({field}," not in public
 
-        for snippet in [
-            'field(DTYP, "stream")',
-            f'field(OUT,  "{protocol}")',
-            f'field(DOL,  "{public_name}.VAL NPP NMS")',
-            'field(OMSL, "closed_loop")',
-            'field(PINI, "NO")',
-            f'field(SDIS, "{invalid_name} PP MS")',
-            'field(DISV, "1")',
-            'field(DISS, "INVALID")',
-        ]:
-            assert snippet in writer
+    assert 'record(ao, "$(P)Loop1:RAMP:ENABLE:WRITE")' not in db
+    assert 'record(ao, "$(P)Loop1:RANGE:WRITE")' not in db
 
     enable_invalid = record_block(db, "$(P)Loop1:RAMP:ENABLE:INVALID")
     for snippet in [
@@ -308,7 +296,7 @@ def test_phase_one_safety_layout_uses_invalid_helpers_without_drv_limits():
     ]:
         assert snippet in db
 
-    assert db.count('field(DISS, "INVALID")') >= 6
+    assert db.count('field(DISS, "INVALID")') == 4
     for pv_name in [
         "$(P)Loop1:SETP",
         "$(P)Loop1:RAMP:ENABLE",
