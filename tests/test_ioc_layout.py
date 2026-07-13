@@ -188,6 +188,56 @@ def test_web_dashboard_auto_archives_temperature_logs_with_maintenance_controls(
     assert "logs/" in gitignore
 
 
+def test_web_dashboard_supports_complete_english_chinese_switching():
+    dashboard = read("web/index.html")
+
+    for snippet in [
+        '<select id="language" onchange="setLanguage(this.value)"',
+        '<option value="en">English</option>',
+        '<option value="zh">中文</option>',
+        'data-i18n="connect"',
+        'data-i18n="temperatureControl"',
+        'data-i18n="logArchive"',
+        "const translations=",
+        "const LANGUAGE_STORAGE_KEY='instrument_ui_language'",
+        "new URLSearchParams(window.location.search).get('lang')",
+        "localStorage.getItem(LANGUAGE_STORAGE_KEY)",
+        "navigator.languages?.[0]||navigator.language",
+        "window.history.replaceState(window.history.state,'',url)",
+        "document.documentElement.lang=lang==='zh'?'zh-CN':'en'",
+        "setLanguage(initialLanguage())",
+    ]:
+        assert snippet in dashboard
+
+    for english, chinese in [
+        ("statusConnected:'CONNECTED'", "statusConnected:'已连接'"),
+        ("heaterRange:'Heater Range'", "heaterRange:'加热器档位'"),
+        ("stable:'Stable'", "stable:'已稳定'"),
+        (
+            "warningSetpoint:'Setpoint exceeds 350 K safety limit'",
+            "warningSetpoint:'设定温度超过 350 K 安全上限'",
+        ),
+        (
+            "chartEmpty:'Connect or select DEMO to plot temperature trend'",
+            "chartEmpty:'请连接仪器或选择 DEMO 以绘制温度趋势'",
+        ),
+        ("logConnected:'Connected — logging started'", "logConnected:'已连接——日志记录已开始'"),
+    ]:
+        assert english in dashboard
+        assert chinese in dashboard
+
+    for dynamic_contract in [
+        "setStatus(connectionState)",
+        "el.textContent=hasReading?t(stable?'stable':'notStable'):'--'",
+        "items.push({text:t('warningSetpoint'),critical:true})",
+        "x.fillText(t('chartEmpty')",
+        "st.textContent=t(s.active?'recordingOn':'recordingPaused')",
+        "params.range=rangeLabel(null,params.rangeCode)",
+        "renderSystemLog()",
+    ]:
+        assert dynamic_contract in dashboard
+
+
 def test_documentation_matches_current_public_workflow():
     readme = read("README.md")
     tutorial = read("docs/operator_tutorial_zh.md")
