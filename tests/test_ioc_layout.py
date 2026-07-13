@@ -1,4 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+from scripts import ls336_web_dashboard as dashboard
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -236,6 +239,392 @@ def test_web_dashboard_supports_complete_english_chinese_switching():
         "renderSystemLog()",
     ]:
         assert dynamic_contract in dashboard
+
+
+def test_macos_web_dashboard_filters_pseudo_ports(monkeypatch):
+    monkeypatch.setattr(dashboard.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        dashboard.glob,
+        "glob",
+        lambda _pattern: [
+            "/dev/cu.usbserial-LS336",
+            "/dev/cu.BLTH",
+            "/dev/cu.Bluetooth-Incoming-Port",
+            "/dev/cu.SLAB_USBtoUART",
+            "/dev/cu.usbserial-LS336",
+        ],
+    )
+
+    assert dashboard.available_ports() == [
+        "DEMO",
+        "/dev/cu.SLAB_USBtoUART",
+        "/dev/cu.usbserial-LS336",
+    ]
+
+
+def test_macos_web_dashboard_claims_adapter_exclusively(monkeypatch):
+    serial_calls = []
+
+    def open_serial(port, **options):
+        serial_calls.append((port, options))
+        return SimpleNamespace(is_open=True)
+
+    fake_serial = SimpleNamespace(
+        SEVENBITS=7,
+        PARITY_ODD="odd",
+        STOPBITS_ONE=1,
+        Serial=open_serial,
+    )
+    monkeypatch.setattr(dashboard, "serial", fake_serial)
+    monkeypatch.setattr(dashboard.sys, "platform", "darwin")
+
+    client = dashboard.LakeShoreSerialClient("/dev/cu.usbserial-LS336")
+    client.open()
+
+    assert serial_calls[0][0] == "/dev/cu.usbserial-LS336"
+    assert serial_calls[0][1]["exclusive"] is True
+
+
+def test_web_dashboard_releases_serial_connection(monkeypatch):
+    closed = []
+
+    class FakeConnection:
+        is_open = True
+
+        def close(self):
+            closed.append(True)
+
+    fake_serial = SimpleNamespace(
+        SEVENBITS=7,
+        PARITY_ODD="odd",
+        STOPBITS_ONE=1,
+        Serial=lambda *args, **options: FakeConnection(),
+    )
+    monkeypatch.setattr(dashboard, "serial", fake_serial)
+
+    client = dashboard.LakeShoreSerialClient("/dev/cu.usbserial-LS336")
+    client.open()
+    client.close()
+    client.close()
+
+    assert closed == [True]
+    assert client._serial is None
+
+
+def test_web_dashboard_switches_connections_without_leaking_previous_client(monkeypatch):
+    clients = {}
+
+    class FakeClient:
+        def __init__(self, port):
+            self.port = port
+            self.opened = False
+            self.closed = False
+
+        def open(self):
+            self.opened = True
+
+        def close(self):
+            self.closed = True
+
+        def read_all(self):
+            return {"comm": self.port}
+
+    class FakeLogger:
+        def start_session(self, selected_port, mode):
+            return None
+
+        def append(self, payload):
+            return None
+
+        def status(self):
+            return {"active": True}
+
+    def make_client(port):
+        client = FakeClient(port)
+        clients[port] = client
+        return client
+
+    monkeypatch.setattr(dashboard, "STATE", {"client": None, "selected_port": None, "mode": None})
+    monkeypatch.setattr(dashboard, "LOGGER", FakeLogger())
+    monkeypatch.setattr(dashboard, "LakeShoreSerialClient", make_client)
+
+    dashboard.connect_selected_port("/dev/cu.usbserial-LS336-A")
+    dashboard.connect_selected_port("/dev/cu.usbserial-LS336-B")
+
+    assert clients["/dev/cu.usbserial-LS336-A"].closed is True
+    assert clients["/dev/cu.usbserial-LS336-B"].opened is True
+    assert dashboard.STATE["client"] is clients["/dev/cu.usbserial-LS336-B"]
+
+
+def test_failed_reconnect_keeps_previous_client(monkeypatch):
+    previous = SimpleNamespace(read_all=lambda: {"comm": "old"}, close=lambda: None)
+    failed_candidate = SimpleNamespace(
+        open=lambda: None,
+        read_all=lambda: (_ for _ in ()).throw(RuntimeError("no reply")),
+        close=lambda: setattr(failed_candidate, "closed", True),
+        closed=False,
+    )
+
+    class FakeLogger:
+        sessions = 0
+        appends = 0
+
+        def start_session(self, selected_port, mode):
+            self.sessions += 1
+
+        def append(self, payload):
+            self.appends += 1
+
+        def status(self):
+            return {"active": True}
+
+    monkeypatch.setattr(
+        dashboard,
+        "STATE",
+        {"client": previous, "selected_port": "/dev/cu.usbserial-OLD", "mode": "hardware"},
+    )
+    fake_logger = FakeLogger()
+    monkeypatch.setattr(dashboard, "LOGGER", fake_logger)
+    monkeypatch.setattr(dashboard, "LakeShoreSerialClient", lambda _port: failed_candidate)
+
+    try:
+        dashboard.connect_selected_port("/dev/cu.usbserial-NEW")
+    except RuntimeError as exc:
+        assert str(exc) == "no reply"
+    else:
+        raise AssertionError("failed serial read must propagate")
+
+    assert failed_candidate.closed is True
+    assert dashboard.STATE["client"] is previous
+    assert fake_logger.sessions == 0
+    assert fake_logger.appends == 0
+
+
+def test_same_port_reconnect_reuses_healthy_exclusive_client(monkeypatch):
+    reads = []
+    existing = SimpleNamespace(
+        read_all=lambda: reads.append(True) or {"comm": "Connected"},
+        close=lambda: None,
+    )
+
+    class FakeLogger:
+        def start_session(self, selected_port, mode):
+            return None
+
+        def append(self, payload):
+            return None
+
+        def status(self):
+            return {"active": True}
+
+    port = "/dev/cu.usbserial-LS336"
+    monkeypatch.setattr(
+        dashboard,
+        "STATE",
+        {"client": existing, "selected_port": port, "mode": "hardware"},
+    )
+    monkeypatch.setattr(dashboard, "LOGGER", FakeLogger())
+    monkeypatch.setattr(
+        dashboard,
+        "LakeShoreSerialClient",
+        lambda _port: (_ for _ in ()).throw(AssertionError("must reuse existing client")),
+    )
+
+    payload = dashboard.connect_selected_port(port)
+
+    assert reads == [True]
+    assert payload["comm"] == "Connected"
+    assert dashboard.STATE["client"] is existing
+
+
+def test_same_port_reconnect_reopens_once_after_disconnect(monkeypatch):
+    old_closed = []
+    previous = SimpleNamespace(
+        read_all=lambda: (_ for _ in ()).throw(RuntimeError("USB disconnected")),
+        close=lambda: old_closed.append(True),
+    )
+
+    class Replacement:
+        def __init__(self):
+            self.opened = 0
+
+        def open(self):
+            self.opened += 1
+
+        def read_all(self):
+            return {"comm": "Connected"}
+
+        def close(self):
+            return None
+
+    class FakeLogger:
+        def start_session(self, selected_port, mode):
+            return None
+
+        def append(self, payload):
+            return None
+
+        def status(self):
+            return {"active": True}
+
+    replacement = Replacement()
+    port = "/dev/cu.usbserial-LS336"
+    monkeypatch.setattr(
+        dashboard,
+        "STATE",
+        {"client": previous, "selected_port": port, "mode": "hardware"},
+    )
+    monkeypatch.setattr(dashboard, "LOGGER", FakeLogger())
+    monkeypatch.setattr(dashboard, "LakeShoreSerialClient", lambda _port: replacement)
+
+    dashboard.connect_selected_port(port)
+
+    assert old_closed == [True]
+    assert replacement.opened == 1
+    assert dashboard.STATE["client"] is replacement
+
+
+def test_logging_failure_does_not_misreport_successful_port_switch(monkeypatch):
+    old_closed = []
+    previous = SimpleNamespace(
+        read_all=lambda: {"comm": "old"},
+        close=lambda: old_closed.append(True),
+    )
+
+    class Replacement:
+        def open(self):
+            return None
+
+        def read_all(self):
+            return {"comm": "Connected"}
+
+        def close(self):
+            return None
+
+    class FailingLogger:
+        def start_session(self, selected_port, mode):
+            raise OSError("disk full")
+
+        def status(self):
+            return {"active": False, "rows": 0}
+
+    replacement = Replacement()
+    monkeypatch.setattr(
+        dashboard,
+        "STATE",
+        {
+            "client": previous,
+            "selected_port": "/dev/cu.usbserial-OLD",
+            "mode": "hardware",
+        },
+    )
+    monkeypatch.setattr(dashboard, "LOGGER", FailingLogger())
+    monkeypatch.setattr(dashboard, "LakeShoreSerialClient", lambda _port: replacement)
+
+    payload = dashboard.connect_selected_port("/dev/cu.usbserial-NEW")
+
+    assert old_closed == [True]
+    assert dashboard.STATE["client"] is replacement
+    assert dashboard.STATE["selected_port"] == "/dev/cu.usbserial-NEW"
+    assert payload["comm"] == "Connected"
+    assert payload["log_status"]["error"] == "disk full"
+
+
+def test_read_failure_closes_backend_before_ui_reports_disconnected(monkeypatch):
+    closed = []
+    failing_client = SimpleNamespace(
+        read_all=lambda: (_ for _ in ()).throw(RuntimeError("USB disconnected")),
+        close=lambda: closed.append(True),
+    )
+
+    class FakeLogger:
+        def status(self):
+            return {"active": True}
+
+    replies = []
+    handler = object.__new__(dashboard.Handler)
+    handler.reply_json = lambda payload, status=200, headers=None: replies.append(
+        (payload, status)
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "STATE",
+        {
+            "client": failing_client,
+            "selected_port": "/dev/cu.usbserial-LS336",
+            "mode": "hardware",
+        },
+    )
+    monkeypatch.setattr(dashboard, "LOGGER", FakeLogger())
+
+    handler.with_client(
+        lambda client: client.read_all(),
+        append_log=True,
+        disconnect_on_error=True,
+    )
+
+    assert closed == [True]
+    assert dashboard.STATE == {"client": None, "selected_port": None, "mode": None}
+    assert replies == [
+        (
+            {"error": "USB disconnected", "log_status": {"active": True}},
+            500,
+        )
+    ]
+
+
+def test_cancelled_http_response_does_not_close_healthy_serial_client(monkeypatch):
+    closed = []
+    healthy_client = SimpleNamespace(
+        read_all=lambda: {"comm": "Connected"},
+        close=lambda: closed.append(True),
+    )
+
+    class FakeLogger:
+        def append(self, payload):
+            return None
+
+        def status(self):
+            return {"active": True}
+
+    handler = object.__new__(dashboard.Handler)
+    handler.reply_json = lambda *args, **kwargs: (_ for _ in ()).throw(
+        BrokenPipeError("browser navigated away")
+    )
+    state = {
+        "client": healthy_client,
+        "selected_port": "/dev/cu.usbserial-LS336",
+        "mode": "hardware",
+    }
+    monkeypatch.setattr(dashboard, "STATE", state)
+    monkeypatch.setattr(dashboard, "LOGGER", FakeLogger())
+
+    try:
+        handler.with_client(
+            lambda client: client.read_all(),
+            append_log=True,
+            disconnect_on_error=True,
+        )
+    except BrokenPipeError as exc:
+        assert str(exc) == "browser navigated away"
+    else:
+        raise AssertionError("reply failure must remain outside serial error handling")
+
+    assert closed == []
+    assert dashboard.STATE is state
+    assert dashboard.STATE["client"] is healthy_client
+
+
+def test_web_dashboard_stops_polling_after_communication_error():
+    frontend = read("web/index.html")
+    backend = read("scripts/ls336_web_dashboard.py")
+
+    assert "if(refreshInFlight)return;" in frontend
+    assert "finally{refreshInFlight=false}" in frontend
+    assert "stopAuto();" in frontend
+    assert "setStatus('disconnected')" in frontend
+    assert "if selected_port not in available_ports():" in backend
+    assert "Selected serial port is not currently available" in backend
 
 
 def test_documentation_matches_current_public_workflow():

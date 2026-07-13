@@ -125,15 +125,29 @@ class LakeShoreSerialClient:
         with self._lock:
             if self._serial and self._serial.is_open:
                 return
+            serial_options: dict[str, object] = {
+                "baudrate": self.baud,
+                "bytesize": serial.SEVENBITS,
+                "parity": serial.PARITY_ODD,
+                "stopbits": serial.STOPBITS_ONE,
+                "timeout": self.timeout,
+                "write_timeout": self.timeout,
+            }
+            if sys.platform == "darwin":
+                # Prevent two local dashboards from opening the same USB-RS232
+                # adapter when both instruments are running on one Mac.
+                serial_options["exclusive"] = True
             self._serial = serial.Serial(
                 self.port,
-                baudrate=self.baud,
-                bytesize=serial.SEVENBITS,
-                parity=serial.PARITY_ODD,
-                stopbits=serial.STOPBITS_ONE,
-                timeout=self.timeout,
-                write_timeout=self.timeout,
+                **serial_options,
             )
+
+    def close(self) -> None:
+        with self._lock:
+            serial_connection = self._serial
+            self._serial = None
+            if serial_connection and serial_connection.is_open:
+                serial_connection.close()
 
     def query(self, command: str) -> str:
         with self._lock:
@@ -256,6 +270,9 @@ class DemoLakeShoreClient:
 
     def open(self) -> None:
         self.last_update = time.monotonic()
+
+    def close(self) -> None:
+        """Demo mode owns no external resources."""
 
     def read_pid(self) -> tuple[str, str, str]:
         return (f"{self.pid[0]:.3f}", f"{self.pid[1]:.3f}", f"{self.pid[2]:.3f}")
@@ -538,9 +555,16 @@ class MaintenanceAuth:
 
 
 def available_ports() -> list[str]:
+    """Return real serial candidates plus DEMO without macOS pseudo-ports."""
+
     ports = ["DEMO"]
     if sys.platform == "darwin":
-        ports.extend(port for port in sorted(glob.glob("/dev/cu.*")) if "Bluetooth" not in port)
+        mac_ports = {
+            port
+            for port in glob.glob("/dev/cu.*")
+            if not any(marker in port.casefold() for marker in ("bluetooth", "blth"))
+        }
+        ports.extend(sorted(mac_ports))
         return ports
     if sys.platform.startswith("win") and list_ports is not None:
         ports.extend(port.device for port in list_ports.comports())
@@ -550,8 +574,89 @@ def available_ports() -> list[str]:
 
 
 STATE: dict[str, object | None] = {"client": None, "selected_port": None, "mode": None}
+STATE_LOCK = threading.RLock()
 LOGGER = LogArchive(LOG_DIR)
 AUTH = MaintenanceAuth(os.environ.get("LS336_MAINT_PASSWORD", DEFAULT_MAINT_PASSWORD))
+
+
+def safe_log_status(error: Exception | None = None) -> dict[str, object]:
+    """Return logger state without letting local log failures hide serial state."""
+
+    try:
+        status = dict(LOGGER.status())
+    except Exception:
+        status = {"active": False}
+    if error is not None:
+        status["error"] = str(error)
+    return status
+
+
+def connect_selected_port(selected_port: str) -> dict[str, object]:
+    """Open one selected client and safely replace the previous connection."""
+
+    with STATE_LOCK:
+        previous_client = STATE["client"]
+        reuse_existing = previous_client is not None and STATE["selected_port"] == selected_port
+        if reuse_existing:
+            try:
+                payload = previous_client.read_all()
+            except Exception:
+                try:
+                    previous_client.close()
+                except Exception:
+                    pass
+                STATE.update({"client": None, "selected_port": None, "mode": None})
+                previous_client = None
+                reuse_existing = False
+
+        if not reuse_existing:
+            candidate = (
+                DemoLakeShoreClient()
+                if selected_port == "DEMO"
+                else LakeShoreSerialClient(selected_port)
+            )
+            try:
+                candidate.open()
+                payload = candidate.read_all()
+            except Exception:
+                try:
+                    candidate.close()
+                except Exception:
+                    pass
+                raise
+
+            if previous_client is not None:
+                try:
+                    previous_client.close()
+                except Exception:
+                    try:
+                        candidate.close()
+                    except Exception:
+                        pass
+                    raise
+
+            STATE["client"] = candidate
+            STATE["selected_port"] = selected_port
+            STATE["mode"] = "demo" if selected_port == "DEMO" else "hardware"
+
+        try:
+            LOGGER.start_session(selected_port, str(STATE["mode"]))
+            LOGGER.append(payload)
+            log_status = safe_log_status()
+        except Exception as exc:  # keep serial truth even if local logging fails
+            log_status = safe_log_status(exc)
+        payload["log_status"] = log_status
+        return payload
+
+
+def close_current_client() -> None:
+    """Release the active serial adapter, if any."""
+
+    with STATE_LOCK:
+        client = STATE["client"]
+        STATE.update({"client": None, "selected_port": None, "mode": None})
+        if client is not None:
+            client.close()
 
 
 MAINTENANCE_HTML = """<!doctype html>
@@ -590,7 +695,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/ports":
             self.reply_json({"ports": available_ports()})
         elif path == "/api/read":
-            self.with_client(lambda client: client.read_all(), append_log=True)
+            self.with_client(
+                lambda client: client.read_all(),
+                append_log=True,
+                disconnect_on_error=True,
+            )
         elif path == "/api/log/status":
             self.reply_json(LOGGER.status())
         elif path == "/api/log/download":
@@ -612,16 +721,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/connect":
             try:
                 selected_port = str(body["port"])
-                client = DemoLakeShoreClient() if selected_port == "DEMO" else LakeShoreSerialClient(selected_port)
-                client.open()
-                STATE["client"] = client
-                STATE["selected_port"] = selected_port
-                STATE["mode"] = "demo" if selected_port == "DEMO" else "hardware"
-                LOGGER.start_session(selected_port, str(STATE["mode"]))
-                payload = client.read_all()
-                LOGGER.append(payload)
-                payload["log_status"] = LOGGER.status()
-                self.reply_json(payload)
+                if selected_port not in available_ports():
+                    raise ValueError("Selected serial port is not currently available")
+                self.reply_json(connect_selected_port(selected_port))
             except (KeyError, ValueError, RuntimeError, OSError) as exc:
                 self.reply_json({"error": str(exc)}, 400)
         elif path == "/api/setpoint":
@@ -681,19 +783,41 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def with_client(self, action, append_log: bool = False) -> None:
-        client = STATE["client"]
-        if client is None:
-            self.reply_json({"error": "Not connected. Choose a port and click Connect."}, 400)
-            return
-        try:
-            payload = action(client)
-            if append_log and isinstance(payload, dict):
-                LOGGER.append(payload)
-                payload["log_status"] = LOGGER.status()
-            self.reply_json(payload)
-        except Exception as exc:  # noqa: BLE001
-            self.reply_json({"error": str(exc), "log_status": LOGGER.status()}, 500)
+    def with_client(
+        self,
+        action,
+        append_log: bool = False,
+        disconnect_on_error: bool = False,
+    ) -> None:
+        with STATE_LOCK:
+            client = STATE["client"]
+            if client is None:
+                response = {"error": "Not connected. Choose a port and click Connect."}
+                response_status = 400
+            else:
+                try:
+                    payload = action(client)
+                except Exception as exc:  # noqa: BLE001 - serial/action failure boundary
+                    if disconnect_on_error:
+                        STATE.update({"client": None, "selected_port": None, "mode": None})
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
+                    response = {"error": str(exc), "log_status": safe_log_status()}
+                    response_status = 500
+                else:
+                    if append_log and isinstance(payload, dict):
+                        try:
+                            LOGGER.append(payload)
+                            log_status = safe_log_status()
+                        except Exception as exc:
+                            log_status = safe_log_status(exc)
+                        payload["log_status"] = log_status
+                    response = payload
+                    response_status = 200
+
+        self.reply_json(response, response_status)
 
     def write_pid(self, client, p: float, i: float, d: float) -> dict[str, str]:
         result = client.set_pid(p, i, d)
@@ -784,7 +908,11 @@ def main() -> None:
         print("Maintenance password uses the default value. Set LS336_MAINT_PASSWORD before production use.")
     if not args.no_open:
         webbrowser.open(url)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        close_current_client()
 
 
 if __name__ == "__main__":

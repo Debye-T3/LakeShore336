@@ -409,7 +409,7 @@ button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
 
 <script>
 // ── State ──
-let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={};
+let backend=false,autoTimer=null,refreshInFlight=false,logRows=[],logEnabled=false,lastData={},history=[],logStatus={};
 let lang='en',connectionState='disconnected',systemLogEntries=[];
 let editingInputs=new Set();
 let demo={inputs:{A:82.4,B:84.1,C:296,D:296},coldInput:'A',sampleInput:'B',controlInput:'B',setpoint:90,ramp:.5,range:3,pid:[40,80,2],last:performance.now()};
@@ -555,7 +555,15 @@ async function connect(){
   }catch(e){log('logError',{message:e.message})}
 }
 async function refresh(){
-  try{update(backend?await api('/api/read'):simulate())}catch(e){log('logError',{message:e.message})}
+  if(refreshInFlight)return;
+  refreshInFlight=true;
+  try{update(backend?await api('/api/read'):simulate())}catch(e){
+    stopAuto();
+    setStatus('disconnected');
+    document.getElementById('status_dot').classList.remove('live');
+    document.getElementById('status_dot').classList.add('dead');
+    log('logError',{message:e.message});
+  }finally{refreshInFlight=false}
 }
 
 function setStatus(state){
@@ -715,7 +723,8 @@ function drawChart(){
 }
 
 // ── Autopoll ──
-function startAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=setInterval(refresh,2000)}
+function stopAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=null}
+function startAuto(){stopAuto();autoTimer=setInterval(refresh,2000)}
 
 // ── Logging ──
 async function refreshLogStatus(){try{if(backend)updateLogStatus(await api('/api/log/status'))}catch(e){log('logArchiveError',{message:e.message})}}
