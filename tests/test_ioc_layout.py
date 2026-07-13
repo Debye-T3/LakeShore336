@@ -625,6 +625,8 @@ def test_web_dashboard_stops_polling_after_communication_error():
     assert "setStatus('disconnected')" in frontend
     assert "if selected_port not in available_ports():" in backend
     assert "Selected serial port is not currently available" in backend
+    assert 'except KeyboardInterrupt:' in backend
+    assert 'Shutting down Lake Shore 336 dashboard.' in backend
 
 
 def test_documentation_matches_current_public_workflow():

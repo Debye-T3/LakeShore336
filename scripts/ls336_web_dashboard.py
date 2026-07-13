@@ -910,6 +910,8 @@ def main() -> None:
         webbrowser.open(url)
     try:
         server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down Lake Shore 336 dashboard.")
     finally:
         server.server_close()
         close_current_client()
