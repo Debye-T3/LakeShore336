@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Browser dashboard for direct Lake Shore 336 serial control."""
+"""Browser dashboard backed by an EPICS IOC or the built-in demo client."""
 
 from __future__ import annotations
 
 import argparse
 import csv
-import glob
 import json
+import math
 import os
+import queue
 import secrets
 import sys
 import threading
@@ -20,18 +21,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-try:
-    import serial
-    from serial.tools import list_ports
-except ImportError:  # pragma: no cover
-    serial = None
-    list_ports = None
-
-
-DEFAULT_BAUD = 57600
 DEFAULT_TIMEOUT = 2.0
 DEFAULT_MAINT_PASSWORD = "ls336-maint"
-COMMAND_PACE_SECONDS = 0.15
+DEFAULT_PREFIX = os.environ.get("LS336_PREFIX", "LS336:")
 if getattr(sys, "frozen", False):
     ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
     LOG_DIR = Path(sys.executable).parent / "logs"
@@ -41,6 +33,16 @@ else:
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 INPUT_CHANNELS = ("A", "B", "C", "D")
 RANGE_LABELS = {"0": "Off", "1": "Low", "2": "Medium", "3": "High"}
+
+from ls336_epics_client import (
+    EpicsAccessDenied,
+    EpicsClientError,
+    EpicsConnectionError,
+    EpicsOperationError,
+    EpicsTimeoutError,
+    LakeShoreEpicsClient,
+    PVReading,
+)
 CSV_FIELDS = [
     "timestamp_local",
     "cold_head_K",
@@ -69,24 +71,6 @@ def normalize_input(value: object, default: str = "A") -> str:
     return channel
 
 
-def split_ramp(reply: str) -> tuple[str, str]:
-    pieces = [piece.strip() for piece in reply.split(",", 1)]
-    if len(pieces) != 2:
-        return reply, "--"
-    return ("On" if pieces[0] == "1" else "Off", pieces[1])
-
-
-def split_pid(reply: str) -> tuple[str, str, str]:
-    pieces = [piece.strip() for piece in reply.split(",")]
-    if len(pieces) != 3:
-        return ("--", "--", "--")
-    return (pieces[0], pieces[1], pieces[2])
-
-
-def normalize_range(reply: str) -> str:
-    return reply.strip().split(",", 1)[0]
-
-
 def add_requested_control_values(
     values: dict[str, str], value: float, ramp_rate: float, heater_range: int
 ) -> dict[str, str]:
@@ -113,141 +97,6 @@ def today_key() -> str:
 
 def beijing_now() -> datetime:
     return datetime.now(BEIJING_TZ)
-
-
-class LakeShoreSerialClient:
-    def __init__(self, port: str, baud: int = DEFAULT_BAUD, timeout: float = DEFAULT_TIMEOUT):
-        if serial is None:
-            raise RuntimeError("pyserial is not installed. Run: python -m pip install pyserial")
-        self.port = port
-        self.baud = baud
-        self.timeout = timeout
-        self._lock = threading.RLock()
-        self._serial: serial.Serial | None = None
-        self.cold_input = "A"
-        self.sample_input = "B"
-        self.control_input = "B"
-
-    def open(self) -> None:
-        with self._lock:
-            if self._serial and self._serial.is_open:
-                return
-            self._serial = serial.Serial(
-                self.port,
-                baudrate=self.baud,
-                bytesize=serial.SEVENBITS,
-                parity=serial.PARITY_ODD,
-                stopbits=serial.STOPBITS_ONE,
-                timeout=self.timeout,
-                write_timeout=self.timeout,
-            )
-
-    def query(self, command: str) -> str:
-        with self._lock:
-            self.open()
-            assert self._serial is not None
-            self._serial.reset_input_buffer()
-            self._serial.write(f"{command}\r\n".encode("ascii"))
-            reply = self._serial.readline().decode("ascii", errors="replace").strip()
-            if not reply:
-                raise RuntimeError(f"No reply for {command}")
-            return reply
-
-    def write(self, command: str) -> None:
-        with self._lock:
-            self._raw_write(command)
-
-    def _raw_write(self, command: str) -> None:
-        self.open()
-        assert self._serial is not None
-        self._serial.write(f"{command}\r\n".encode("ascii"))
-
-    def _paced_write(self, command: str) -> None:
-        self._raw_write(command)
-        time.sleep(COMMAND_PACE_SECONDS)
-
-    def read_pid(self) -> tuple[str, str, str]:
-        return split_pid(self.query("PID? 1"))
-
-    def set_pid(self, p: float, i: float, d: float) -> dict[str, str]:
-        with self._lock:
-            old = self.read_pid()
-            self._raw_write(f"PID 1,{p:.3f},{i:.3f},{d:.3f}")
-            time.sleep(0.2)
-            new = self.read_pid()
-            return {"old": ",".join(old), "new": ",".join(new)}
-
-    def read_all(self) -> dict[str, str]:
-        ramp_enable, ramp_rate = split_ramp(self.query("RAMP? 1"))
-        heater_range_raw = normalize_range(self.query("RANGE? 1"))
-        pid_p, pid_i, pid_d = self.read_pid()
-        input_values = {channel: self.query(f"KRDG? {channel}") for channel in INPUT_CHANNELS}
-        return {
-            "idn": self.query("*IDN?"),
-            "cold_head": input_values[self.cold_input],
-            "sample": input_values[self.sample_input],
-            "input_a": input_values["A"],
-            "input_b": input_values["B"],
-            "input_c": input_values["C"],
-            "input_d": input_values["D"],
-            "cold_input": self.cold_input,
-            "sample_input": self.sample_input,
-            "control_input": self.control_input,
-            "setpoint": self.query("SETP? 1"),
-            "ramp_enable": ramp_enable,
-            "ramp_rate": ramp_rate,
-            "heater_range_raw": heater_range_raw,
-            "heater_range": RANGE_LABELS.get(heater_range_raw, heater_range_raw),
-            "pid_p": pid_p,
-            "pid_i": pid_i,
-            "pid_d": pid_d,
-            "heater": self.query("HTR? 1"),
-            "comm": "Connected",
-            "updated": time.strftime("%H:%M:%S"),
-        }
-
-    def set_setpoint(self, value: float, ramp_rate: float) -> dict[str, str]:
-        if not 0 <= value <= 350:
-            raise ValueError("Setpoint must be within 0..350 K")
-        if not 0 <= ramp_rate <= 10:
-            raise ValueError("Ramp rate must be within 0..10 K/min")
-        with self._lock:
-            self._raw_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
-            self._raw_write(f"SETP 1,{value:.3f}")
-            time.sleep(0.5)
-            return self.read_all()
-
-    def set_inputs(self, cold_input: str, sample_input: str, control_input: str) -> dict[str, str]:
-        self.cold_input = normalize_input(cold_input, "A")
-        self.sample_input = normalize_input(sample_input, "B")
-        self.control_input = normalize_input(control_input, self.sample_input)
-        self.write(f"CSET 1,{self.control_input},1,1")
-        return self.read_all()
-
-    def set_control(
-        self,
-        value: float,
-        ramp_rate: float,
-        heater_range: int,
-        cold_input: str,
-        sample_input: str,
-        control_input: str,
-    ) -> dict[str, str]:
-        if heater_range not in (0, 1, 2, 3):
-            raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
-        if not 0 <= value <= 350:
-            raise ValueError("Setpoint must be within 0..350 K")
-        if not 0 <= ramp_rate <= 10:
-            raise ValueError("Ramp rate must be within 0..10 K/min")
-        self.cold_input = normalize_input(cold_input, self.cold_input)
-        self.sample_input = normalize_input(sample_input, self.sample_input)
-        self.control_input = normalize_input(control_input, self.sample_input)
-        with self._lock:
-            self._paced_write(f"CSET 1,{self.control_input},1,1")
-            self._paced_write(f"RANGE 1,{heater_range}")
-            self._paced_write(f"RAMP 1,{1 if ramp_rate > 0 else 0},{ramp_rate:.3f}")
-            self._paced_write(f"SETP 1,{value:.3f}")
-            return add_requested_control_values(self.read_all(), value, ramp_rate, heater_range)
 
 
 class DemoLakeShoreClient:
@@ -323,13 +172,20 @@ class DemoLakeShoreClient:
         self,
         value: float,
         ramp_rate: float,
-        heater_range: int,
+        heater_range: object,
         cold_input: str,
         sample_input: str,
         control_input: str,
     ) -> dict[str, str]:
-        if heater_range not in (0, 1, 2, 3):
+        if isinstance(heater_range, bool):
             raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
+        try:
+            range_value = float(heater_range)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High") from exc
+        if not math.isfinite(range_value) or range_value < 0 or range_value > 3 or not range_value.is_integer():
+            raise ValueError("Heater range must be 0=Off, 1=Low, 2=Medium, or 3=High")
+        range_code = int(range_value)
         if not 0 <= value <= 350:
             raise ValueError("Setpoint must be within 0..350 K")
         if not 0 <= ramp_rate <= 10:
@@ -338,8 +194,8 @@ class DemoLakeShoreClient:
         self.setpoint_value = value
         self.ramp_rate = ramp_rate
         self.ramp_enabled = ramp_rate > 0
-        self.heater_range = heater_range
-        return add_requested_control_values(self.read_all(), value, ramp_rate, heater_range)
+        self.heater_range = range_code
+        return add_requested_control_values(self.read_all(), value, ramp_rate, range_code)
 
     def _simulate_temperature(self) -> None:
         now = time.monotonic()
@@ -364,20 +220,20 @@ class LogArchive:
     def __init__(self, log_dir: Path) -> None:
         self.log_dir = log_dir
         self._lock = threading.RLock()
-        self.active = True
+        self.active = False
         self.rows = 0
         self.csv_path: Path | None = None
         self.meta_path: Path | None = None
         self.current_key = ""
-        self.current_port = ""
+        self.ioc_prefix = ""
         self.current_mode = ""
         self.last_write_local = ""
         self.error = ""
 
-    def start_session(self, selected_port: str, mode: str) -> dict[str, object]:
+    def start_session(self, ioc_prefix: str, mode: str) -> dict[str, object]:
         with self._lock:
             self.active = True
-            self.current_port = selected_port
+            self.ioc_prefix = ioc_prefix
             self.current_mode = mode
             try:
                 self._ensure_file(force=False)
@@ -388,7 +244,7 @@ class LogArchive:
             payload.setdefault("sessions", []).append(
                 {
                     "started_local": beijing_now().isoformat(timespec="seconds"),
-                    "selected_port": selected_port,
+                    "ioc_prefix": ioc_prefix,
                     "mode": mode,
                 }
             )
@@ -398,12 +254,14 @@ class LogArchive:
     def pause(self, operator: str) -> dict[str, object]:
         with self._lock:
             self.active = False
+            self.error = ""
             self._record_operation("pause_logging", operator)
             return self.status()
 
     def resume(self, operator: str) -> dict[str, object]:
         with self._lock:
             self.active = True
+            self.error = ""
             self._ensure_file(force=False)
             self._record_operation("resume_logging", operator)
             return self.status()
@@ -411,6 +269,7 @@ class LogArchive:
     def new_file(self, operator: str) -> dict[str, object]:
         with self._lock:
             self.active = True
+            self.error = ""
             self._ensure_file(force=True)
             self._record_operation("new_log_file", operator)
             return self.status()
@@ -454,17 +313,22 @@ class LogArchive:
         with self._lock:
             self._record_operation("pid_write", operator, {"old": old, "new": new})
 
+    def set_error(self, message: str) -> None:
+        with self._lock:
+            self.error = message
+
     def status(self) -> dict[str, object]:
-        return {
-            "active": self.active,
-            "rows": self.rows,
-            "csv": str(self.csv_path) if self.csv_path else "",
-            "metadata": str(self.meta_path) if self.meta_path else "",
-            "log_dir": str(self.log_dir),
-            "filename": self.csv_path.name if self.csv_path else "",
-            "last_write_local": self.last_write_local,
-            "error": self.error,
-        }
+        with self._lock:
+            return {
+                "active": self.active,
+                "rows": self.rows,
+                "csv": str(self.csv_path) if self.csv_path else "",
+                "metadata": str(self.meta_path) if self.meta_path else "",
+                "log_dir": str(self.log_dir),
+                "filename": self.csv_path.name if self.csv_path else "",
+                "last_write_local": self.last_write_local,
+                "error": self.error,
+            }
 
     def _ensure_file(self, force: bool) -> None:
         key = today_key()
@@ -501,7 +365,7 @@ class LogArchive:
                 "instrument": "Lake Shore 336",
                 "date": self.current_key,
                 "timezone": "Asia/Shanghai",
-                "selected_port": self.current_port,
+                "ioc_prefix": self.ioc_prefix,
                 "mode": self.current_mode,
                 "csv_file": self.csv_path.name if self.csv_path else "",
                 "csv_fields": CSV_FIELDS,
@@ -544,19 +408,267 @@ class MaintenanceAuth:
             return token in self._tokens
 
 
-def available_ports() -> list[str]:
-    ports = ["DEMO"]
-    if sys.platform == "darwin":
-        ports.extend(port for port in sorted(glob.glob("/dev/cu.*")) if "Bluetooth" not in port)
-        return ports
-    if sys.platform.startswith("win") and list_ports is not None:
-        ports.extend(port.device for port in list_ports.comports())
-        return ports
-    ports.extend(sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyS*") + glob.glob("/dev/ttyACM*")))
-    return ports
+class ArchiveWorker:
+    """Periodic CSV writer and EPICS log-command consumer for one IOC client."""
+
+    COMMANDS = {
+        "LOG:START": "start",
+        "LOG:PAUSE": "pause",
+        "LOG:RESUME": "resume",
+        "LOG:NEW_FILE": "new_file",
+    }
+    STATE_CODES = {"stopped": 0, "recording": 1, "paused": 2, "error": 3}
+    HEARTBEAT_TIMEOUT = 6.0
+
+    def __init__(self, client: LakeShoreEpicsClient, archive: LogArchive, prefix: str) -> None:
+        self.client = client
+        self.archive = archive
+        self.prefix = prefix
+        self._commands: queue.Queue[tuple[str, str]] = queue.Queue(maxsize=8)
+        self._stop = threading.Event()
+        self._lock = threading.RLock()
+        self._command_condition = threading.Condition(self._lock)
+        self._request_lock = threading.Lock()
+        self._pending: set[str] = set()
+        self._processed: dict[str, int] = {}
+        self._command_errors: dict[str, str] = {}
+        self._heartbeat = 0
+        self._last_heartbeat_value: int | None = None
+        self._last_heartbeat_change = time.monotonic()
+        self._callback_token = client.add_monitor_callback(self._on_monitor)
+        self._thread = threading.Thread(target=self._run, name="ls336-archive", daemon=True)
+
+    def start(self) -> None:
+        try:
+            status = self.archive.start_session(self.prefix, "epics")
+            if status.get("error"):
+                self.archive.set_error(str(status["error"]))
+            self._write_sample()
+        except Exception as exc:  # noqa: BLE001
+            self.archive.set_error(str(exc))
+        self._publish_status(heartbeat=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self.client.remove_monitor_callback(self._callback_token)
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=10.0)
+        if not self._thread.is_alive():
+            with self.archive._lock:
+                self.archive.active = False
+            self._publish_status(state_override="stopped", heartbeat=False)
+
+    def request(self, command: str, timeout: float = 12.0) -> dict[str, object]:
+        command = command.strip().lower()
+        suffix = next((key for key, value in self.COMMANDS.items() if value == command), None)
+        if suffix is None:
+            raise ValueError("Log command must be start, pause, resume, or new_file")
+        with self._request_lock:
+            with self._command_condition:
+                baseline = self._processed.get(suffix, 0)
+            self.client.write_log_command(command)
+            deadline = time.monotonic() + timeout
+            with self._command_condition:
+                while self._processed.get(suffix, 0) <= baseline:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise EpicsTimeoutError(f"Timed out waiting for {command} archive command")
+                    self._command_condition.wait(timeout=min(remaining, 0.25))
+                error = self._command_errors.get(suffix, "")
+            if error:
+                raise EpicsOperationError(error)
+            return self.status()
+
+    def status(self) -> dict[str, object]:
+        payload = self.archive.status()
+        age = max(0.0, time.monotonic() - self._last_heartbeat_change)
+        alive = self._thread.is_alive() and age <= self.HEARTBEAT_TIMEOUT
+        payload.update(
+            {
+                "state": self._state_name(),
+                "heartbeat_alive": alive,
+                "heartbeat_age_seconds": round(age, 1),
+            }
+        )
+        if self._thread.is_alive() and not alive and not payload.get("error"):
+            payload["error"] = "Archive heartbeat is stale"
+        return payload
+
+    def _on_monitor(self, suffix: str, reading: PVReading) -> None:
+        if suffix == "LOG:HEARTBEAT":
+            try:
+                value = int(reading.value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return
+            with self._lock:
+                if value != self._last_heartbeat_value:
+                    self._last_heartbeat_value = value
+                    self._last_heartbeat_change = time.monotonic()
+        command = self.COMMANDS.get(suffix)
+        if command is None or not reading.is_valid() or self._integer(reading.value) != 1:
+            return
+        with self._lock:
+            if suffix in self._pending or self._stop.is_set():
+                return
+            self._pending.add(suffix)
+        try:
+            self._commands.put_nowait((suffix, command))
+        except queue.Full:
+            with self._lock:
+                self._pending.discard(suffix)
+            self.archive.set_error("Archive command queue is full")
+
+    @staticmethod
+    def _integer(value: object | None) -> int | None:
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _number(
+        snapshot: dict[str, PVReading], suffix: str, precision: int = 3, max_age: float = 6.0
+    ) -> str:
+        reading = snapshot.get(suffix)
+        if reading is None or not reading.is_valid(max_age=max_age):
+            return ""
+        try:
+            number = float(reading.value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return ""
+        return f"{number:.{precision}f}" if math.isfinite(number) else ""
+
+    def _write_sample(self) -> None:
+        if not self.archive.active:
+            return
+        snapshot = self.client.read_snapshot(refresh=True)
+        cold = self.client.cold_input
+        sample = self.client.sample_input
+        values: dict[str, str] = {
+            "cold_head": self._number(snapshot, f"Input:{cold}:TEMP_RBV"),
+            "sample": self._number(snapshot, f"Input:{sample}:TEMP_RBV"),
+            "input_a": self._number(snapshot, "Input:A:TEMP_RBV"),
+            "input_b": self._number(snapshot, "Input:B:TEMP_RBV"),
+            "input_c": self._number(snapshot, "Input:C:TEMP_RBV"),
+            "input_d": self._number(snapshot, "Input:D:TEMP_RBV"),
+            "setpoint": self._number(snapshot, "Loop1:SETP_RBV"),
+            "ramp_rate": self._number(snapshot, "Loop1:RAMP:RATE_RBV"),
+            "heater": self._number(snapshot, "Loop1:HTR_RBV", 1),
+            "pid_p": self._number(snapshot, "Loop1:PID:P_RBV", max_age=22.0),
+            "pid_i": self._number(snapshot, "Loop1:PID:I_RBV", max_age=22.0),
+            "pid_d": self._number(snapshot, "Loop1:PID:D_RBV", max_age=22.0),
+        }
+        ramp = snapshot.get("Loop1:RAMP:ENABLE_RBV")
+        values["ramp_enable"] = (
+            ("On" if self._integer(ramp.value) else "Off")
+            if ramp is not None and ramp.is_valid() else ""
+        )
+        range_reading = snapshot.get("Loop1:RANGE_RBV")
+        range_code = self._integer(range_reading.value) if range_reading and range_reading.is_valid() else None
+        values["heater_range"] = RANGE_LABELS.get(str(range_code), "")
+        comm = snapshot.get("COMM:STATUS")
+        if comm is None:
+            values["comm"] = "Stale"
+        elif comm.error:
+            if "IOC unavailable" in comm.error:
+                values["comm"] = "IOC unavailable"
+            elif "Timed out" in comm.error:
+                values["comm"] = "IOC timeout"
+            else:
+                values["comm"] = "CA read error"
+        elif not comm.is_valid():
+            values["comm"] = "Stale" if comm.is_stale() else "Alarm"
+        else:
+            values["comm"] = {0: "Disconnected", 1: "Connected", 2: "Error"}.get(
+                self._integer(comm.value), "Error"
+            )
+        self.archive.append(values)
+
+    def _execute_command(self, suffix: str, command: str) -> None:
+        error = ""
+        try:
+            if command == "start":
+                result = self.archive.start_session(self.prefix, "epics")
+                if result.get("error"):
+                    raise OSError(str(result["error"]))
+                self._write_sample()
+            elif command == "pause":
+                self.archive.pause("epics")
+            elif command == "resume":
+                self.archive.resume("epics")
+                self._write_sample()
+            elif command == "new_file":
+                self.archive.new_file("epics")
+                self._write_sample()
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+            self.archive.set_error(error)
+        finally:
+            try:
+                self.client.acknowledge_log_command(command)
+            except Exception as exc:  # noqa: BLE001
+                error = error or str(exc)
+                self.archive.set_error(error)
+            with self._command_condition:
+                self._pending.discard(suffix)
+                self._processed[suffix] = self._processed.get(suffix, 0) + 1
+                self._command_errors[suffix] = error
+                self._command_condition.notify_all()
+        self._publish_status(heartbeat=False)
+
+    def _state_name(self) -> str:
+        if self.archive.error:
+            return "error"
+        if self.archive.active:
+            return "recording"
+        return "paused" if self.archive.csv_path else "stopped"
+
+    def _publish_status(self, state_override: str | None = None, heartbeat: bool) -> None:
+        if heartbeat:
+            self._heartbeat = (self._heartbeat + 1) & 0x7FFFFFFF
+        state_name = state_override or self._state_name()
+        status = self.archive.status()
+        try:
+            self.client.write_archive_status(
+                state=self.STATE_CODES[state_name],
+                filename=str(status["filename"]),
+                rows=int(status["rows"]),
+                last_write=str(status["last_write_local"]),
+                error=str(status["error"]),
+                heartbeat=self._heartbeat if heartbeat else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.archive.set_error(str(exc))
+
+    def _run(self) -> None:
+        next_sample = time.monotonic() + 2.0
+        try:
+            while not self._stop.is_set():
+                timeout = max(0.05, min(0.5, next_sample - time.monotonic()))
+                try:
+                    suffix, command = self._commands.get(timeout=timeout)
+                except queue.Empty:
+                    pass
+                else:
+                    self._execute_command(suffix, command)
+                    self._commands.task_done()
+                now = time.monotonic()
+                if now >= next_sample:
+                    try:
+                        self._write_sample()
+                    except Exception as exc:  # noqa: BLE001
+                        self.archive.set_error(str(exc))
+                    self._publish_status(heartbeat=True)
+                    next_sample = now + 2.0
+        except Exception as exc:  # noqa: BLE001
+            self.archive.set_error(f"Archive worker stopped: {exc}")
+        finally:
+            self._publish_status(heartbeat=False)
 
 
-STATE: dict[str, object | None] = {"client": None, "selected_port": None, "mode": None}
+STATE: dict[str, object | None] = {"client": None, "prefix": None, "mode": None, "archive": None}
+STATE_LOCK = threading.RLock()
 LOGGER = LogArchive(LOG_DIR)
 AUTH = MaintenanceAuth(os.environ.get("LS336_MAINT_PASSWORD", DEFAULT_MAINT_PASSWORD))
 
@@ -585,6 +697,77 @@ status();
 
 
 class Handler(BaseHTTPRequestHandler):
+    @staticmethod
+    def client_error_status(exc: Exception) -> int:
+        if isinstance(exc, (PermissionError, EpicsAccessDenied)):
+            return 403
+        if isinstance(exc, EpicsTimeoutError):
+            return 504
+        if isinstance(exc, EpicsConnectionError):
+            return 503
+        if isinstance(exc, EpicsOperationError):
+            return 409
+        if isinstance(exc, (ValueError, KeyError, TypeError)):
+            return 400
+        if isinstance(exc, EpicsClientError):
+            return 502
+        return 500
+
+    @staticmethod
+    def is_demo_mode() -> bool:
+        with STATE_LOCK:
+            return STATE["mode"] == "demo"
+
+    @staticmethod
+    def disconnect_active() -> None:
+        with STATE_LOCK:
+            old_client = STATE["client"]
+            old_archive = STATE["archive"]
+            old_mode = STATE["mode"]
+            STATE.update(client=None, prefix=None, mode=None, archive=None)
+        if isinstance(old_archive, ArchiveWorker):
+            old_archive.stop()
+        elif old_mode == "demo":
+            with LOGGER._lock:
+                LOGGER.active = False
+        if isinstance(old_client, LakeShoreEpicsClient):
+            old_client.close()
+
+    def archive_status(self) -> dict[str, object]:
+        with STATE_LOCK:
+            archive = STATE["archive"]
+            mode = STATE["mode"]
+        if isinstance(archive, ArchiveWorker):
+            result = archive.status()
+            result["mode"] = mode
+            return result
+        result = LOGGER.status()
+        result["mode"] = mode or "disconnected"
+        result["state"] = "recording" if LOGGER.active else ("paused" if LOGGER.csv_path else "stopped")
+        result["heartbeat_alive"] = mode == "demo"
+        result["heartbeat_age_seconds"] = 0.0 if mode == "demo" else None
+        return result
+
+    def log_command(self, command: str) -> None:
+        with STATE_LOCK:
+            archive = STATE["archive"]
+            mode = STATE["mode"]
+        try:
+            if isinstance(archive, ArchiveWorker):
+                self.reply_json(archive.request(command))
+            elif mode == "demo":
+                if command == "pause":
+                    result = LOGGER.pause("maintenance")
+                elif command == "resume":
+                    result = LOGGER.resume("maintenance")
+                else:
+                    result = LOGGER.new_file("maintenance")
+                self.reply_json(result)
+            else:
+                raise EpicsConnectionError("Connect the dashboard to an IOC before controlling its archive")
+        except Exception as exc:  # noqa: BLE001
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, self.client_error_status(exc))
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/":
@@ -594,12 +777,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply_json({"error": "Dashboard file not found"}, 500)
         elif path == "/maintenance":
             self.reply_html(MAINTENANCE_HTML)
-        elif path == "/api/ports":
-            self.reply_json({"ports": available_ports()})
+        elif path in ("/api/config", "/api/ports"):
+            self.reply_json({"prefix": DEFAULT_PREFIX})
         elif path == "/api/read":
-            self.with_client(lambda client: client.read_all(), append_log=True)
+            with STATE_LOCK:
+                demo_mode = STATE["mode"] == "demo"
+            self.with_client(lambda client: client.read_all(), append_log=demo_mode)
         elif path == "/api/log/status":
-            self.reply_json(LOGGER.status())
+            self.reply_json(self.archive_status())
         elif path == "/api/log/download":
             self.reply_file(LOGGER.csv_path)
         elif path == "/api/pid":
@@ -617,24 +802,42 @@ class Handler(BaseHTTPRequestHandler):
             self.reply_json({"error": str(exc)}, 400)
             return
         if path == "/api/connect":
+            client: LakeShoreEpicsClient | DemoLakeShoreClient | None = None
             try:
-                selected_port = str(body["port"])
-                client = DemoLakeShoreClient() if selected_port == "DEMO" else LakeShoreSerialClient(selected_port)
-                client.open()
-                STATE["client"] = client
-                STATE["selected_port"] = selected_port
-                STATE["mode"] = "demo" if selected_port == "DEMO" else "hardware"
-                LOGGER.start_session(selected_port, str(STATE["mode"]))
-                payload = client.read_all()
-                LOGGER.append(payload)
-                payload["log_status"] = LOGGER.status()
+                prefix = str(body.get("prefix") or DEFAULT_PREFIX).strip()
+                if prefix.upper() == "DEMO":
+                    self.disconnect_active()
+                    client = DemoLakeShoreClient()
+                    client.open()
+                    with STATE_LOCK:
+                        STATE.update(client=client, prefix="DEMO", mode="demo", archive=None)
+                    LOGGER.start_session("DEMO", "demo")
+                    payload = client.read_all()
+                    LOGGER.append(payload)
+                else:
+                    if not prefix:
+                        raise ValueError("IOC PV prefix is required")
+                    self.disconnect_active()
+                    client = LakeShoreEpicsClient(prefix, timeout=DEFAULT_TIMEOUT)
+                    client.connect()
+                    payload = client.read_all()
+                    with STATE_LOCK:
+                        STATE.update(client=client, prefix=client.prefix, mode="epics", archive=None)
+                    worker = ArchiveWorker(client, LOGGER, client.prefix)
+                    with STATE_LOCK:
+                        STATE["archive"] = worker
+                    worker.start()
+                assert client is not None
+                payload["log_status"] = self.archive_status()
                 self.reply_json(payload)
-            except (KeyError, ValueError, RuntimeError, OSError) as exc:
-                self.reply_json({"error": str(exc)}, 400)
+            except Exception as exc:  # noqa: BLE001
+                self.disconnect_active()
+                status = self.client_error_status(exc)
+                self.reply_json({"error": str(exc)}, status)
         elif path == "/api/setpoint":
             self.with_client(
                 lambda client: client.set_setpoint(float(body["target"]), float(body["ramp"])),
-                append_log=True,
+                append_log=self.is_demo_mode(),
             )
         elif path == "/api/inputs":
             self.with_client(
@@ -643,19 +846,19 @@ class Handler(BaseHTTPRequestHandler):
                     str(body["sample_input"]),
                     str(body.get("control_input") or body["sample_input"]),
                 ),
-                append_log=True,
+                append_log=self.is_demo_mode(),
             )
         elif path == "/api/control":
             self.with_client(
                 lambda client: client.set_control(
                     float(body["target"]),
                     float(body["ramp"]),
-                    int(body["range"]),
+                    body["range"],
                     str(body.get("cold_input") or "A"),
                     str(body.get("sample_input") or "B"),
                     str(body.get("control_input") or body.get("sample_input") or "B"),
                 ),
-                append_log=True,
+                append_log=self.is_demo_mode(),
             )
         elif path == "/api/maintenance/login":
             try:
@@ -667,15 +870,15 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/log/pause":
             if not self.require_maintenance():
                 return
-            self.reply_json(LOGGER.pause("maintenance"))
+            self.log_command("pause")
         elif path == "/api/log/resume":
             if not self.require_maintenance():
                 return
-            self.reply_json(LOGGER.resume("maintenance"))
+            self.log_command("resume")
         elif path == "/api/log/new":
             if not self.require_maintenance():
                 return
-            self.reply_json(LOGGER.new_file("maintenance"))
+            self.log_command("new_file")
         elif path == "/api/pid":
             if not self.require_maintenance():
                 return
@@ -689,18 +892,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def with_client(self, action, append_log: bool = False) -> None:
-        client = STATE["client"]
+        with STATE_LOCK:
+            client = STATE["client"]
         if client is None:
-            self.reply_json({"error": "Not connected. Choose a port and click Connect."}, 400)
+            self.reply_json({"error": "Not connected. Enter an IOC prefix and click Connect."}, 400)
             return
         try:
             payload = action(client)
             if append_log and isinstance(payload, dict):
                 LOGGER.append(payload)
-                payload["log_status"] = LOGGER.status()
+            if isinstance(payload, dict):
+                payload["log_status"] = self.archive_status()
             self.reply_json(payload)
+        except EpicsAccessDenied as exc:
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 403)
+        except EpicsTimeoutError as exc:
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 504)
+        except EpicsConnectionError as exc:
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 503)
+        except EpicsOperationError as exc:
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 409)
+        except ValueError as exc:
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 400)
         except Exception as exc:  # noqa: BLE001
-            self.reply_json({"error": str(exc), "log_status": LOGGER.status()}, 500)
+            self.reply_json({"error": str(exc), "log_status": self.archive_status()}, 500)
 
     def write_pid(self, client, p: float, i: float, d: float) -> dict[str, str]:
         result = client.set_pid(p, i, d)
@@ -709,11 +924,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def validate_pid(self, body: dict[str, object]) -> tuple[float, float, float]:
         try:
+            if any(isinstance(body[key], bool) for key in ("p", "i", "d")):
+                raise ValueError("PID values must be numeric")
             values = (float(body["p"]), float(body["i"]), float(body["d"]))
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("PID values must be numeric") from exc
-        if any(value < 0 or value > 10000 for value in values):
-            raise ValueError("PID values must be within 0..10000")
+        p, i, d = values
+        if not all(math.isfinite(value) for value in values) or not (
+            0.1 <= p <= 1000 and 0.1 <= i <= 1000 and 0 <= d <= 200
+        ):
+            raise ValueError("PID values must be P 0.1..1000, I 0.1..1000, D 0..200")
         return values
 
     def require_maintenance(self) -> bool:
@@ -778,12 +998,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lake Shore 336 browser dashboard")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--prefix", default=DEFAULT_PREFIX, help="IOC PV prefix (also settable with LS336_PREFIX)")
     parser.add_argument("--no-open", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    global DEFAULT_PREFIX
+    DEFAULT_PREFIX = args.prefix.strip() or "LS336:"
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
     print(f"Lake Shore 336 browser dashboard: {url}")
@@ -791,7 +1014,13 @@ def main() -> None:
         print("Maintenance password uses the default value. Set LS336_MAINT_PASSWORD before production use.")
     if not args.no_open:
         webbrowser.open(url)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        Handler.disconnect_active()
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ def wait_until_ready(base_url: str, process: subprocess.Popen, timeout: float) -
         if process.poll() is not None:
             raise RuntimeError(f"Packaged server exited with code {process.returncode}")
         try:
-            return request_json(f"{base_url}/api/ports", 1.0)
+            return request_json(f"{base_url}/api/config", 1.0)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
             last_error = exc
             time.sleep(0.25)
@@ -85,16 +85,16 @@ def smoke_test(executable: Path, port: int, timeout: float, cleanup_logs: bool) 
         stderr=subprocess.DEVNULL,
     )
     try:
-        ports = wait_until_ready(base_url, process, timeout)
-        if "DEMO" not in ports.get("ports", []):
-            raise RuntimeError("DEMO port is missing from the packaged application")
+        config = wait_until_ready(base_url, process, timeout)
+        if not config.get("prefix"):
+            raise RuntimeError("Default IOC prefix is missing from the packaged application")
 
         main_page = request_text(f"{base_url}/", 3.0)
         maintenance_page = request_text(f"{base_url}/maintenance", 3.0)
         if "Lake Shore" not in main_page or "PID Control" not in maintenance_page:
             raise RuntimeError("Main or maintenance page content is incomplete")
 
-        connected = request_json(f"{base_url}/api/connect", 3.0, {"port": "DEMO"})
+        connected = request_json(f"{base_url}/api/connect", 3.0, {"prefix": "DEMO"})
         require_equal(connected, "comm", "Demo")
 
         controlled = request_json(

@@ -1,181 +1,142 @@
-# Lake Shore 336 ARPES 温控面板使用教程
+# Lake Shore 336 EPICS 温控面板使用教程
 
-这份教程给实验室使用者看。目标是：能打开本地面板、读取温度、连接真实 Lake Shore 336、设置安全升温，并把温度记录保存成可归档的 CSV 文件。
+本教程说明如何通过 EPICS IOC 使用温控面板、调整 Loop 1 参数和保存温度日志。真实仪器的串口只由 IOC 打开；Python 网页程序通过 Channel Access 读写 IOC PV，并负责 CSV 归档。
 
-## 1. 页面类型
+## 1. 启动顺序
 
-### 本地控制页面
+1. 在连接着 Lake Shore 336 串口的 Linux/WSL 主机上启动 IOC。
+2. 确认 IOC 发布的 PV 前缀，例如 `LS336:`，并确认基本读回正常。
+3. 在指定的一台 Windows、Linux 或 macOS 主机上启动 Python 网页程序；每台 IOC 只运行一个负责 CSV 的归档服务。
+4. 在该主机的浏览器输入同一个 IOC 前缀，点击 `Connect`。
 
-真实控制 Lake Shore 336 时，必须在连接着仪器的电脑上运行本地服务，然后打开：
+网页默认只绑定本机地址 `127.0.0.1`，使用 `http://127.0.0.1:8765` 打开。网页默认使用 `LS336:`。启动程序前也可以设置 `LS336_PREFIX`，或使用 `--prefix LS336_DEV:`。在网页输入 `DEMO` 可使用模拟器，无需连接 IOC。
+
+其他获授权的 EPICS 控制系统可按 ACF 规则直接访问 IOC。网页远程访问时，浏览器请求会使用网页服务的 CA 身份；只有在现场另行配置 HTTP 身份认证和网络限制后，才开放远程网页访问。
+
+默认 `access.acf` 只允许读取。现场 EPICS 管理员应在 ACF 中定义站点自己的 `UAG` 用户组和 `HAG` 主机组，并仅在对应 `ASG` 中增加带有这两个限制的 `RULE(1,WRITE)`；保留 `RULE(1,READ)` 供监视。归档服务用户需要同时属于 `LOG_CONTROL` 和 `ARCHIVER` 授权范围。跨子网访问需要配置 CA 地址列表或 EPICS Gateway；不要在通用配置中开放所有主机写权限。语法请参考 [EPICS ACF 文档](https://docs.epics-controls.org/projects/base/en/latest/ACF-Language.html)。
+
+规则结构示例（部署时必须换成站点批准的用户名和主机名/IP，并分别配置所需 ASG）：
 
 ```text
-http://127.0.0.1:8765
+UAG(LS336_CONTROL_USERS) {replace_with_site_ca_user}
+HAG(LS336_CONTROL_HOSTS) {replace_with_approved_host}
+ASG(CONTROL) {
+    RULE(1, READ)
+    RULE(1, WRITE) {
+        UAG(LS336_CONTROL_USERS)
+        HAG(LS336_CONTROL_HOSTS)
+    }
+}
 ```
-
-只有本地页面可以访问电脑上的 COM 口并读写仪器。
-
-### 公开 Demo 页面
-
-Vercel 或静态网页只适合预览界面和测试 Demo 数据。它不能连接实验室仪器，也不能控制真实温控器。静态页面里的 CSV 下载只是浏览器临时数据，不会生成可归档的本地日志文件。
 
 ## 2. Windows 启动
 
-最简单的方式是在项目文件夹中双击：
+在项目文件夹双击：
 
 ```text
 START_WINDOWS_DASHBOARD.bat
 ```
 
-它会检查 Python、安装串口依赖、启动本地网页服务，并打开：
-
-```text
-http://127.0.0.1:8765
-```
-
-手动运行时，可以在 PowerShell 中执行：
+或手动运行：
 
 ```powershell
 python -m pip install -r requirements.txt
+python scripts\ls336_web_dashboard.py --prefix LS336:
+```
+
+网页默认地址为 `http://127.0.0.1:8765`。如果 IOC 使用其他前缀，请在命令中替换，或在启动前设置：
+
+```powershell
+$env:LS336_PREFIX="LS336_DEV:"
 python scripts\ls336_web_dashboard.py
 ```
 
-## 3. 连接真实 Lake Shore 336
+## 3. 读取和输入通道
 
-1. 用 USB/串口线把 Lake Shore 336 接到电脑。
-2. 刷新本地页面，端口列表里应出现真实串口，例如 `COM3`、`COM4`。
-3. 选择真实端口，不要选择 `DEMO`。
-4. 点击 `CONNECT`。
-5. 确认 Cold Head Temp 和 Sample Stage Temp 出现真实读数。
+连接后确认仪器型号、A/B/C/D 温度、Loop 1 输入、设定值、Ramp、Heater Range 和 Heater Output 均显示合理数值。通信状态应为 `Connected`。
 
-如果只是测试界面，请选择 `DEMO`。Demo 模式不会控制任何真实设备。
+- `Cold Input Channel` 和 `Sample Input Channel` 仅决定网页的冷头/样品显示与 CSV 字段映射。
+- `Control Input Channel` 会修改仪器 Loop 1 控制输入，并与 `LS336:Loop1:INPUT_RBV` 的 `OUTMODE? 1` 读回对应。
+- 直接 IOC 命令 `Loop1:INPUT` 与整组 APPLY 暂存 PV `Loop1:CTRL:INPUT` 都使用整数代码 `1=A`、`2=B`、`3=C`、`4=D`；小数或超范围代码会在串口命令前被拒绝。
+- `_RBV` 是实际读回值的权威来源。收到 PV 写入成功并不代表仪器已经达到目标值。
 
-## 4. 主要参数
+## 4. 设置温度
 
-- Cold Head Temp：冷头温度，通常对应 Lake Shore 的 A 通道。
-- Sample Stage Temp：样品台温度，通常对应 B 通道，实验中更应该关注这个读数。
-- Setpoint：Loop 1 目标温度，单位 K。
-- Ramp：升温速率，单位 K/min。
-- Heater Range：加热档位，首次真实测试建议从 `Low` 开始。
-- PID：普通实验页面只读取仪器当前 PID；PID 写入只在维护页面中开放。
+整组 `Apply Settings` 会先把输入通道、设定值、Ramp 速率和 Heater Range 暂存到 IOC，再触发一次校验后的 `Loop1:CTRL:APPLY`。IOC 按 `CSET → RANGE → RAMP → SETP` 顺序执行，并在命令后查询读回。
 
-## 5. 安全升温建议
+IOC 的 `Loop1:CTRL:INPUT` 暂存值使用整数代码 `1=A`、`2=B`、`3=C`、`4=D`；`Loop1:CTRL:RANGE` 使用 `0=Off`、`1=Low`、`2=Medium`、`3=High`。小数或超范围代码会在串口命令前被拒绝。
 
-第一次真实测试时，不要一次设置很远的目标温度。
+IOC 提供下列状态：
 
-推荐流程：
+- `LS336:Loop1:CTRL:BUSY`：操作是否进行中。
+- `LS336:Loop1:CTRL:STATUS`：`Idle`、`Busy`、`Done`、`PartialFailure` 或 `Error`。
+- `LS336:Loop1:CTRL:ERROR`：协议失败或读回不一致的摘要。
 
-1. 先只连接并读取温度。
-2. 确认读数正常后，把 Setpoint 设为比当前样品温度高 `2 K` 到 `5 K`。
-3. Ramp 设为 `0.2` 或 `0.5 K/min`。
-4. Heater Range 选 `Low`。
-5. 点击 `APPLY`。
-6. 观察温度曲线是否平稳上升。
+若出现 `PartialFailure` 或 `Error`，先查看实际 `_RBV`，不要假设参数已回滚。单独调整设定值和 Ramp 时，网页会通过 `Loop1:RAMP:ENABLE`、`Loop1:RAMP:RATE`、`Loop1:SETP` 命令 PV 操作，并检查对应读回。
 
-如果温度上升过快、明显过冲，或 heater 输出长期接近 100%，先点击 `OFF`，再检查参数。
+第一次真实控制时按现场负责人要求设置安全值；通常先选 `Off` 或 `Low`，设小幅目标变化和较低 Ramp，观察实际读回与温度曲线后再继续。
 
-## 6. 温度日志归档
+## 5. PID 维护
 
-本地网页服务支持自动归档温度记录。连接成功后会自动开始记录，实验用户不需要点击开始，也不能在普通页面停止记录。
+普通控制页面可读取 PID。维护页面地址为 `http://127.0.0.1:8765/maintenance`，使用前设置 `LS336_MAINT_PASSWORD`；默认密码为 `ls336-maint`。
 
-使用方式：
+PID 写入需要登录和网页二次确认。IOC 将 P/I/D 暂存后通过一次 `Loop1:PID:APPLY` 提交，范围为 P `0.1..1000`、I `0.1..1000`、D `0..200`。IOC 提供 `PID:STATUS`、`PID:ERROR` 和最近一次写入前的 `PID:P_OLD_RBV`、`I_OLD_RBV`、`D_OLD_RBV`。Python 维护页把旧值、新值和时间写入 metadata 审计记录。
 
-1. 连接 `DEMO` 或真实仪器。
-2. 确认记录状态显示为 `ON`。
-3. 保持本地 Python 服务运行，面板会随自动刷新持续写入数据。
-4. 点击 `DOWNLOAD CSV` 下载当前 CSV。
+维护登录是网页层保护；还必须由 EPICS Access Security 授予该用户 `MAINT` 写权限。
 
-归档文件默认保存在项目目录下：
+## 6. CSV 日志
 
-```text
-logs/
-```
-
-默认按北京时间每天创建两个文件：
+成功连接 IOC 后，Python 归档线程立即创建/续写当天文件并写首行，此后每 2 秒写一行，不依赖浏览器刷新。日志保存在项目目录的 `logs/`：
 
 ```text
 ls336_temperature_YYYYMMDD.csv
 ls336_temperature_YYYYMMDD.meta.json
 ```
 
-CSV 包含：
+日期和 `timestamp_local` 使用北京时间 `Asia/Shanghai`。CSV 字段顺序保留原有格式，包括冷头、样品、A/B/C/D 温度、设定值、Ramp、Heater Range、Heater 输出、PID、通信状态和稳定状态。稳定状态仍按样品温度与设定值相差不超过 `0.2 K` 判断。
 
-- 北京时间 `timestamp_local`
-- 冷头温度
-- 样品温度
-- A/B/C/D 通道温度
-- Setpoint
-- Ramp 开关和 ramp rate
-- Heater range
-- Heater 输出
-- PID 读回值
-- 通信状态
-- 稳定状态
+归档器按 CA 时间戳和 EPICS alarm 判断字段有效性。温度及常规读回超过 6 秒、PID 超过 22 秒或有 alarm 时，相应 CSV 字段留空，不把旧读数伪装成新测量。PID 的较长有效期对应 IOC 的 10 秒 PID 扫描周期。
 
-`.meta.json` 记录连接 session、端口、模式、CSV 字段、项目路径和维护操作，方便后续归档。
+网页显示文件名、行数、最近写入时间和归档状态。`HEARTBEAT LOST` 表示 IOC 上的 `LOG:HEARTBEAT` 停止变化；应确认 Python 服务仍在运行并检查 `LOG:ERROR_RBV`。点击 `DOWNLOAD CSV` 可下载当前文件。
 
-CSV 里的 `timestamp_local` 和 metadata 里的本地时间都使用北京时间 `Asia/Shanghai`。
+其他获授权的 EPICS 客户端也能操作归档：
 
-## 7. 维护页面
+- `LS336:LOG:START`：开始新 session 并立即写一行。
+- `LS336:LOG:PAUSE`、`LS336:LOG:RESUME`：暂停或恢复追加。
+- `LS336:LOG:NEW_FILE`：创建当天带手动后缀的新文件并继续记录。
+- `LS336:LOG:STATE_RBV`、`FILE_RBV`、`ROWS_RBV`、`LAST_WRITE_RBV`、`ERROR_RBV`：归档状态。
+- `LS336:LOG:HEARTBEAT`：由 Python 服务周期更新。
 
-维护页面地址：
+归档器会在处理完命令后把命令 PV 复位到 `0`；该 PV 回到 `0` 前不要重复脉冲。日志文件操作保留 session 和操作记录，PID 维护写入会保留旧值/新值审计。
 
-```text
-http://127.0.0.1:8765/maintenance
-```
+归档器的 EPICS 用户需要 `ARCHIVER` 写权限，并需要 `LOG_CONTROL` 权限来确认日志命令。日常硬件控制使用 `CONTROL`，PID 维护使用 `MAINT`。
 
-维护页面需要密码。正式使用前建议在启动本地服务前设置：
+## 7. 直接串口备用程序
 
-```powershell
-$env:LS336_MAINT_PASSWORD="your-password"
-python scripts\ls336_web_dashboard.py
-```
-
-如果没有设置环境变量，默认维护密码是：
-
-```text
-ls336-maint
-```
-
-维护页面可以执行：
-
-- 暂停/恢复记录
-- 强制新建当前日期的日志文件
-- 下载当前 CSV
-- 读取 PID
-- 受控写入 PID
-
-PID 写入属于高风险维护操作。写入前页面会要求确认，写入后旧值和新值会记录到 `.meta.json` 的审计记录中。
+`scripts/ls336_direct_dashboard.py` 是单独的串口程序，只能在 IOC 已停止、确认串口未被其他进程占用时运行。不要让备用程序和 IOC 同时控制同一台仪器。
 
 ## 8. 常见问题
 
-### 页面里只有 DEMO，没有 COM 口
+### 页面无法连接 IOC
 
-检查：
+- 确认 IOC 已启动，并核对网页前缀与 IOC 前缀完全一致。
+- 确认 IOC 所在主机和网页主机之间可进行 CA 搜索；跨子网请联系 EPICS 管理员配置地址列表或 Gateway。
+- 检查 IOC 的 PV 是否存在、`COMM:STATUS` 是否为 `Connected`，以及 IOC 串口是否可访问。
 
-- Lake Shore 是否接在这台电脑上。
-- USB 线是否是数据线。
-- Windows 设备管理器里是否有 `Ports (COM & LPT)`。
-- 串口是否被其他软件占用。
+### 能读数但不能控制
 
-### 点击 CONNECT 后失败
+默认 ACF 只开放读取。请让 EPICS 管理员为相应 CA 用户/主机配置 `CONTROL`、`MAINT`、`LOG_CONTROL` 和 `ARCHIVER` 的最小必要写权限。网页 PID 密码不能替代 EPICS 权限。
 
-常见原因：
+### 日志没有增加
 
-- 选错端口。
-- 端口被别的软件占用。
-- 串口设置和仪器不匹配。
-- 仪器没有回复。
+检查 `LOG:STATE_RBV`、`LOG:ERROR_RBV` 和 `LOG:HEARTBEAT`。确认 Python 网页服务仍在运行、`logs/` 可写，并且归档器用户有 `ARCHIVER` 写权限。若某个读数超过有效期或有 alarm，该 CSV 单元格会留空。
 
-### CSV 没有写入
+### 需要公开演示
 
-真实归档只在本地 Python 服务页面中可用。Vercel 或直接打开 `web/index.html` 的静态页面只能下载浏览器临时 CSV，不能写入 `logs/`。
-
-如果本地页面显示记录错误，通常是 `logs/` 目录不可写或磁盘空间不足。请把页面中的错误信息发给维护人员。
+静态 `web/index.html` 可以模拟温度和控制界面，但不会连接真实仪器或本地 IOC。公开页面只用于 Demo。
 
 ## 9. 安全提醒
 
-- 第一次真实测试用 `Low` heater range。
-- 第一次 setpoint 只比当前样品温度高几 K。
-- Ramp 建议从 `0.2` 或 `0.5 K/min` 开始。
-- PID 只能由维护人员在维护页面或仪器本机按实验室流程调整。
-- 不要把真实控制页面暴露到公网。
+- 首次真实操作遵守线站的控制值和联锁流程，核对 `_RBV` 后再继续。
+- 不要把 IOC 写权限、真实控制页面或串口暴露到公网。
+- 直接串口备用程序启动前先停止 IOC。

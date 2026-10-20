@@ -36,7 +36,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo Installing required serial driver package if needed...
+if not defined LS336_PREFIX set "LS336_PREFIX=LS336:"
+
+echo Installing Python dashboard and Channel Access packages if needed...
 %PYTHON_CMD% -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
@@ -50,6 +52,7 @@ if errorlevel 1 (
 
 echo.
 echo Starting the local dashboard...
+echo IOC PV prefix: %LS336_PREFIX%
 echo A browser window should open at:
 echo   http://127.0.0.1:8765
 echo.
@@ -57,7 +60,7 @@ echo Keep this window open while using the dashboard.
 echo Press Ctrl+C here when you are finished.
 echo.
 
-%PYTHON_CMD% scripts\ls336_web_dashboard.py
+%PYTHON_CMD% scripts\ls336_web_dashboard.py --prefix "%LS336_PREFIX%"
 
 echo.
 echo Dashboard stopped.

@@ -22,6 +22,8 @@ asynOctetSetOutputEos("$(PORT)", 0, "\r\n")
 
 dbLoadRecords("../../db/ls336.db", "P=$(PREFIX),PORT=$(PORT)")
 
+asSetFilename("$(TOP)/iocBoot/iocLS336/access.acf")
+
 iocInit()
 
 dbl

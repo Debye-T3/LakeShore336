@@ -1,3 +1,4 @@
 pyserial>=3.5
+caproto>=1.2,<2.0
 tzdata
 pyinstaller>=6.0

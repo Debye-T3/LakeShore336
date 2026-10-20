@@ -1,0 +1,4 @@
+function(ls336PrepareControlApply)
+function(ls336FinishControlApply)
+function(ls336PreparePidApply)
+function(ls336FinishPidApply)

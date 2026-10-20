@@ -1,20 +1,20 @@
 # Lake Shore 336 EPICS IOC
 
-This repository contains a first-version EPICS IOC for a Lake Shore 336 temperature controller used at a beamline. It exposes `LS336:IDN`, canonical `LS336:Input:A:TEMP_RBV` through `LS336:Input:D:TEMP_RBV` readbacks, true aliases `LS336:ColdHead:TEMP_RBV` and `LS336:Sample:TEMP_RBV`, the read-only `LS336:Loop1:INPUT_RBV` control-input state, conservative Loop 1 setpoint/ramp/range commands plus matching readbacks, heater output, PID readbacks, communication state, and IOC error text.
+This repository contains an EPICS IOC and Python clients for a Lake Shore 336 temperature controller used at a beamline. The IOC owns the serial connection and provides Channel Access readbacks, validated controls, grouped APPLY/PID operations, and archive-command/status PVs. The browser dashboard is a CA client and writes CSV files; it does not open the instrument serial port.
 
 For an operator-facing Chinese tutorial, see [`docs/operator_tutorial_zh.md`](docs/operator_tutorial_zh.md).
 
-## Phase 1 IOC Scope
+## IOC and Python Client Roles
 
-The EPICS IOC is the sole hardware connection owner in Phase 1. Direct Windows dashboards, the local web dashboard, and the portable ZIP package may only talk to hardware while the IOC is stopped. Stop the IOC before opening the direct Windows dashboard, the local web dashboard, or the portable packaged app against the same controller.
+Start the IOC first. It is the only process that opens the controller's serial port. The Web dashboard connects to an IOC PV prefix such as `LS336:` over Channel Access. Do not start the direct-serial fallback while the IOC owns the instrument.
 
-Phase 1 does not convert the existing logger into EPICS records. The logging, maintenance login, packaged offline app, and direct `CSET` workflow described in the dashboard sections below remain part of the separate Python applications, not the IOC.
+The IOC performs `CSET`, `RANGE`, `RAMP`, `SETP`, and PID serial transactions. Python controls those IOC PVs and runs the two-second CSV archive worker. IOC `LOG:*` PVs let another approved CA client start, pause, resume, or rotate that archive and inspect its status and heartbeat.
 
-For the IOC itself, the Phase 1 parser uses `OUTMODE? 1` only to publish the read-only `LS336:Loop1:INPUT_RBV` state. The EPICS IOC does not write `CSET` in Phase 1.
+The standalone `scripts/ls336_direct_dashboard.py` remains a direct-serial fallback for use only while the IOC is stopped.
 
 ## Target Setup
 
-- Host: Windows direct dashboard for operator use; Linux/WSL is optional for the EPICS IOC build.
+- Host: Linux/WSL IOC host and a Python dashboard host on the same subnet, or connected through a site-configured CA address list/Gateway.
 - Instrument link: Lake Shore 336 USB presented as a serial port.
 - Default serial device: `/dev/ttyUSB0`.
 - Serial settings: 57600 baud, 7 data bits, odd parity, 1 stop bit.
@@ -23,9 +23,9 @@ For the IOC itself, the Phase 1 parser uses `OUTMODE? 1` only to publish the rea
 
 Edit `configure/RELEASE.local` or pass macros at IOC start time if your EPICS module paths, PV prefix, or serial device differ.
 
-## Windows Direct Dashboard
+## Windows EPICS Web Dashboard
 
-If the control computer must stay Windows-only, use the direct serial dashboard. This section describes the separate direct application, not the EPICS IOC. It talks to the Lake Shore 336 over a Windows COM port and does not require Linux, WSL, EPICS, `caget`, or `caput`.
+Start the IOC on the computer that can access the Lake Shore serial device. Then on Windows, run the Web dashboard as an EPICS client. Install Python 3 and the listed Python packages:
 
 The friendliest path is to double-click this file from the repository folder:
 
@@ -33,44 +33,36 @@ The friendliest path is to double-click this file from the repository folder:
 START_WINDOWS_DASHBOARD.bat
 ```
 
-It checks Python, installs the required serial package from `requirements.txt`, starts the local web dashboard, and opens `http://127.0.0.1:8765`.
+It installs the Channel Access client dependency, starts the local Web dashboard, and opens `http://127.0.0.1:8765`. Set `LS336_PREFIX` before launch if the IOC uses another prefix.
 
 If you prefer commands, install Python 3 for Windows, then run:
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts\ls336_web_dashboard.py
+python scripts\ls336_web_dashboard.py --prefix LS336:
 ```
 
-The older Tk direct dashboard is still available:
+In the dashboard, enter the IOC PV prefix and click `Connect`. Enter `DEMO` to use the simulator without an IOC. The `Apply` button sends the staged control input, setpoint, ramp rate, and heater range to the grouped IOC APPLY operation. `_RBV` PVs remain authoritative.
+
+The separate direct-serial fallback is still available when the IOC is stopped:
 
 ```powershell
 python scripts\ls336_direct_dashboard.py
 ```
 
-In the dashboard, choose the Lake Shore COM port and click `Connect`. The panel reads the instrument directly and shows cold-head temperature, sample temperature, setpoint readback, ramp state, ramp rate, heater output, and communication status.
-
-For controlled temperature changes, set `Ramp K/min` to a conservative value, set the target setpoint, then click `Apply`. The dashboard writes the Lake Shore ramp command before changing setpoints, so the controller handles the smooth K/min climb. In Windows Device Manager, the controller usually appears under `Ports (COM & LPT)` as a `COM` port such as `COM3`.
-
-Command-line example:
+For a specific Windows COM port, use:
 
 ```powershell
 python scripts\ls336_direct_dashboard.py --port COM3
 ```
 
-For a browser-based ARPES operator panel with demo mode, temperature trend plotting, heater-range control, PID readback, server-side CSV archiving, safety warnings, and English/Chinese labels, run:
+The browser panel retains input mapping, trend and safety displays, heater-range control, PID readback, and maintenance operations. The IOC separately controls its instrument input with `Loop1:INPUT_RBV`; the Python cold-head/sample mapping only selects which temperature is displayed and archived.
 
-```powershell
-python scripts\ls336_web_dashboard.py
-```
-
-Then open `http://127.0.0.1:8765`. Choose `DEMO` to test without hardware, or choose the real Lake Shore serial port. The browser panel focuses on the controls normally needed during ARPES operation: cold-head temperature, sample-stage temperature, input A/B/C/D readback, cold/sample/control input selection, setpoint, ramp rate, heater range (`Off`, `Low`, `Medium`, `High`), PID readback values, and archived temperature logging. `Apply` writes the Lake Shore `CSET`, `RANGE`, `RAMP`, and `SETP` commands in one controlled update. Ordinary users can read PID values, but PID writes are only available in the maintenance page.
-
-After `CONNECT` succeeds, the local Python service starts recording automatically. The ordinary operator page only shows recording status, current CSV filename, row count, and last write time, so experiment users do not need to remember to start logging and cannot accidentally stop it. Click `DOWNLOAD CSV` to retrieve the current archive file. The CSV is written by the local Python service, so it survives browser refreshes and is ready for experiment archiving. The static web demo can still download a temporary browser-only CSV, but only the local Python dashboard creates archived files.
+After an EPICS connection succeeds, a Python archive worker starts and writes the first row immediately, then samples every two seconds even if the browser is closed. It subscribes to IOC PV timestamps and alarms; stale or alarmed fields are left blank rather than repeated as fresh measurements. IOC `LOG:START`, `LOG:PAUSE`, `LOG:RESUME`, and `LOG:NEW_FILE` commands control the same archive. `LOG:HEARTBEAT` lets the UI show when the worker stops updating. Click `DOWNLOAD CSV` to retrieve the current file. A static demo still uses a temporary browser-only CSV.
 
 Archive files use the Beijing-time daily pattern `ls336_temperature_YYYYMMDD.csv` and `ls336_temperature_YYYYMMDD.meta.json`. If maintenance explicitly creates a new file during the same Beijing-time day, the file gets a manual suffix such as `ls336_temperature_YYYYMMDD_manual_HHMMSS.csv`. CSV `timestamp_local` values and metadata local timestamps are written in `Asia/Shanghai`.
 
-Maintenance controls are available at `http://127.0.0.1:8765/maintenance`. Set `LS336_MAINT_PASSWORD` before production use; otherwise the default maintenance password is `ls336-maint`. The maintenance page can pause/resume logging, create a new log file, download the current CSV, and perform controlled Loop 1 PID writes. PID writes require confirmation in the browser and are recorded in the metadata audit log with old and new values.
+Maintenance controls are available at `http://127.0.0.1:8765/maintenance`. Set `LS336_MAINT_PASSWORD` before production use; otherwise the default maintenance password is `ls336-maint`. The page can pause/resume logging, create a new file, download the current CSV, and apply PID values through the IOC's maintenance PVs. PID writes require browser confirmation and record old/new values in metadata. EPICS access security must also grant the dashboard user the required `MAINT`, `LOG_CONTROL`, and `ARCHIVER` permissions.
 
 ## Mac Browser Dashboard
 
@@ -87,13 +79,13 @@ chmod +x START_MAC_DASHBOARD.command scripts/run_web_dashboard_mac.sh
 ./START_MAC_DASHBOARD.command
 ```
 
-The launcher checks Python, installs the required serial package from `requirements.txt`, starts the local web dashboard, and opens `http://127.0.0.1:8765`.
+The launcher checks Python, installs Channel Access client packages, starts the local Web dashboard, and opens `http://127.0.0.1:8765`. The IOC must be running first; set `LS336_PREFIX` if needed.
 
 Manual command-line equivalent:
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 scripts/ls336_web_dashboard.py
+python3 scripts/ls336_web_dashboard.py --prefix LS336:
 ```
 
 ## Share With Other People
@@ -112,9 +104,9 @@ On a connected 64-bit Windows 10/11 build computer, run:
 scripts\build_package.bat
 ```
 
-The script installs/checks build dependencies, creates the PyInstaller application, runs an automated packaged DEMO control and Beijing-time logging smoke test, and writes `dist\LakeShore336_portable.zip`. Copy that ZIP to the offline Windows computer, extract it, and run `START.bat`. The target computer does not need Python, WSL, or internet access. Existing experiment files under the source `logs/` directory are never included in the package.
+The script packages the Web dashboard and its caproto Channel Access client, runs its existing packaged DEMO smoke check, then writes `dist\LakeShore336_portable.zip`. Copy that ZIP to the Windows computer, extract it, and run `START.bat`. The target computer does not need Python or internet access, but it does need network access to a running IOC. Set `LS336_PREFIX` before launch when the IOC uses a non-default prefix. The direct-serial fallback is a separate application and is not part of the IOC-backed package. Existing experiment files under the source `logs/` directory are never included in the package.
 
-See `docs/offline_package_zh.md` for the Chinese deployment and second hardware-test procedure.
+See `docs/offline_package_zh.md` for Chinese deployment instructions.
 
 Vercel workflow:
 
@@ -125,25 +117,15 @@ Vercel workflow:
 
 ### Real Instrument On The Lab Network
 
-Run the browser dashboard on the computer physically connected to the Lake Shore 336:
+Run the IOC on the computer with serial access to the Lake Shore 336. Run one Python dashboard/archive service for that IOC on a designated host with Channel Access connectivity:
 
 ```bash
-python3 scripts/ls336_web_dashboard.py --host 0.0.0.0 --port 8765
+LS336_PREFIX=LS336: python3 scripts/ls336_web_dashboard.py --port 8765
 ```
 
-Find that computer's local IP address:
+The Web server binds to `127.0.0.1` by default; open the dashboard on the same computer at `http://127.0.0.1:8765`. Keep one archive service active for an IOC because that process owns the CSV files and publishes the shared log-status PVs.
 
-```bash
-ipconfig getifaddr en0
-```
-
-People on the same lab network can then open:
-
-```text
-http://<lab-computer-ip>:8765
-```
-
-Do not expose the real instrument control panel directly to the public internet. Use the Vercel site for public/demo access and the local-network dashboard for real hardware.
+Other approved control systems can connect directly to the IOC PVs under their scoped CA access rules. Browser requests to a remotely exposed dashboard use the dashboard service's CA identity, so remote Web access requires site-approved HTTP authentication and network restrictions. Keep the default loopback binding until those controls are in place. CA discovery normally works on one subnet; for other subnets, the site EPICS administrator must configure CA address lists or a Gateway and the corresponding network access rules. Use the Vercel site for public/demo access.
 
 ## VS Code and Codex
 
@@ -176,6 +158,10 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 | `LS336:ColdHead:TEMP_RBV` | read alias | True EPICS alias of `LS336:Input:A:TEMP_RBV`. |
 | `LS336:Sample:TEMP_RBV` | read alias | True EPICS alias of `LS336:Input:B:TEMP_RBV`. |
 | `LS336:Loop1:INPUT_RBV` | read | Read-only Loop 1 control-input state parsed from `OUTMODE? 1`. |
+| `LS336:Loop1:INPUT` | write | Selects Loop 1 control input with an exact numeric code: `1=A`, `2=B`, `3=C`, `4=D`; IOC validates before `CSET`. |
+| `LS336:Loop1:CTRL:INPUT/SETP/RAMP:RATE/RANGE` | write | Staged values for a validated grouped control operation. Input uses numeric codes A=1 through D=4; range uses exact integers 0=Off through 3=High. |
+| `LS336:Loop1:CTRL:APPLY` | write | Sends CSET, RANGE, RAMP, and SETP in order, then refreshes readbacks. |
+| `LS336:Loop1:CTRL:STATUS/BUSY/ERROR` | read | Grouped command progress and failure summary. |
 | `LS336:Loop1:SETP` | write | Loop 1 setpoint command PV. |
 | `LS336:Loop1:SETP_RBV` | read | Authoritative Loop 1 setpoint readback. |
 | `LS336:Loop1:RAMP:ENABLE` | write | Numeric ramp-enable command: exactly `0` or `1`. |
@@ -188,18 +174,26 @@ If you are using Codex in VS Code, open the Codex side panel or command palette 
 | `LS336:Loop1:PID:P_RBV` | read | Read-only Loop 1 PID proportional readback. |
 | `LS336:Loop1:PID:I_RBV` | read | Read-only Loop 1 PID integral readback. |
 | `LS336:Loop1:PID:D_RBV` | read | Read-only Loop 1 PID derivative readback. |
+| `LS336:Loop1:PID:P/I/D` | MAINT write | Staged PID values; written to the controller only by `PID:APPLY`. |
+| `LS336:Loop1:PID:APPLY/STATUS/ERROR` | MAINT write/read | Applies P/I/D together and reports completion. |
+| `LS336:Loop1:PID:P_OLD_RBV/I_OLD_RBV/D_OLD_RBV` | read | Values queried immediately before the last PID apply. |
+| `LS336:LOG:START/PAUSE/RESUME/NEW_FILE` | LOG_CONTROL write | Commands the Python CSV archive worker. Each pulse is acknowledged back to zero. |
+| `LS336:LOG:STATE_RBV/FILE_RBV/ROWS_RBV/LAST_WRITE_RBV/ERROR_RBV` | ARCHIVER write/read | Archive status published by the Python service. |
+| `LS336:LOG:HEARTBEAT` | ARCHIVER write/read | Counter updated by the archive worker; stops changing if it exits. |
 | `LS336:COMM:STATUS` | read | IOC communication summary. States are `Disconnected`, `Connected`, and `Error`. |
 | `LS336:ERR` | read | Last IOC-side validation or communication message. |
 
-## Phase 1 IOC Behavior
+## IOC Control and Access Behavior
 
-Startup sends queries only and never issues `SETP`, `RAMP`, or `RANGE`. All public output records use `PINI` = `NO`, so IOC boot cannot silently change hardware setpoints, ramp state, ramp rate, or heater range.
+Startup sends queries only and never issues `CSET`, `SETP`, `RAMP`, `RANGE`, or `PID`. All hardware write records use `PINI` = `NO`, so IOC boot cannot change controller settings. The grouped control APPLY validates and freezes the requested values, sends the four instrument commands in the tested order, then refreshes readbacks; on failure, it reports protocol/alarm state and actual readbacks without claiming rollback.
 
 A successful command PV write only confirms IOC processing; it is not hardware confirmation. Independent readback PVs such as `LS336:Loop1:SETP_RBV`, `LS336:Loop1:RAMP:ENABLE_RBV`, `LS336:Loop1:RAMP:RATE_RBV`, and `LS336:Loop1:RANGE_RBV` are authoritative.
 
-Ramp enable and heater range use raw numeric staging PVs so validation sees the client's original value before any enum coercion. Their enum labels remain on the authoritative `_RBV` records.
+Ramp enable, heater range, and control-input commands use raw numeric PVs so validation sees the client's original value before any enum coercion. Control input uses codes 1=A through 4=D; range uses exact integers 0=Off through 3=High. Display labels remain on the authoritative `_RBV` records.
 
-Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the current hardware enable bit. Changing `LS336:Loop1:RAMP:ENABLE` first queries `RAMP? 1` and preserves the current hardware rate. Each update is emitted as one locked StreamDevice transaction.
+Changing `LS336:Loop1:RAMP:RATE` first queries `RAMP? 1` and preserves the current hardware enable bit. Changing `LS336:Loop1:RAMP:ENABLE` first queries `RAMP? 1` and preserves the current hardware rate. PID P/I/D are staged and sent together with one `PID` command. The Python dashboard applies a 22-second freshness limit to PID values because those IOC readbacks scan every 10 seconds; other archive fields use a 6-second limit.
+
+`iocBoot/iocLS336/access.acf` defines separate `CONTROL`, `MAINT`, `LOG_CONTROL`, and `ARCHIVER` groups. It grants reads only until the site installs approved CA user/host rules. For deployment, define site-owned `UAG` and `HAG` entries and add a scoped `RULE(1,WRITE)` to the relevant `ASG`; keep `RULE(1,READ)` for monitoring. The Python archiver account needs both `LOG_CONTROL` and `ARCHIVER` write access. Do not add broad default write rules or invent account names/host addresses in the generic IOC configuration. See the [EPICS ACF language reference](https://docs.epics-controls.org/projects/base/en/latest/ACF-Language.html).
 
 ## Safety Limits
 
@@ -209,7 +203,9 @@ The public write PVs use conservative commissioning defaults:
 - `LS336:Loop1:RAMP:ENABLE` accepts exactly `0` or `1`.
 - `LS336:Loop1:RAMP:RATE` accepts `0..10 K/min`.
 - `LS336:Loop1:RANGE` accepts exactly `0`, `1`, `2`, or `3`.
-- Out-of-range, fractional enum, and non-finite writes are blocked by `SDIS` before StreamDevice sends any serial command.
+- `LS336:Loop1:INPUT` and `LS336:Loop1:CTRL:INPUT` accept exact integers 1=A through 4=D; grouped setpoint/ramp/range values follow the same limits.
+- PID apply accepts P `0.1..1000`, I `0.1..1000`, and D `0..200`.
+- Out-of-range, fractional discrete staging values, and non-finite writes are rejected before StreamDevice sends any serial command.
 - The integration tests check for zero serial output on rejected `SETP`, `RAMP`, and `RANGE` writes.
 
 These limits are intended for first commissioning only. Tighten them for the actual sample, cryostat, and heater configuration before routine use.
@@ -255,7 +251,7 @@ make
 bash scripts/check_ioc_ready.sh
 ```
 
-Useful Phase 1 verification commands:
+Useful IOC verification commands:
 
 - `pytest -q`
 - `make`
@@ -343,7 +339,7 @@ caget LS336:Loop1:HTR_RBV
 
 5. If the serial link drops, confirm `LS336:COMM:STATUS`, reconnect the USB/serial path, and wait for the authoritative RBVs to recover before sending another command.
 
-6. Keep the direct apps separate from the IOC. The direct Windows dashboard, browser dashboard, and portable ZIP can still be useful for their own workflows, including logging, but only while the IOC is stopped.
+6. Keep direct-serial tools separate from the IOC. The IOC-backed Web dashboard and portable package use Channel Access and run while the IOC is active; the direct Windows serial dashboard is only for use while the IOC is stopped.
 
 ## Visual Dashboard
 

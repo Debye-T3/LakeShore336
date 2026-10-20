@@ -1,0 +1,22 @@
+# Read access is available to CA clients. No WRITE rules are defined here,
+# so all writes stay denied until the site adds approved UAG/HAG rules.
+
+ASG(DEFAULT) {
+    RULE(1, READ)
+}
+
+ASG(CONTROL) {
+    RULE(1, READ)
+}
+
+ASG(MAINT) {
+    RULE(1, READ)
+}
+
+ASG(LOG_CONTROL) {
+    RULE(1, READ)
+}
+
+ASG(ARCHIVER) {
+    RULE(1, READ)
+}

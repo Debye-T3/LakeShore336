@@ -25,8 +25,7 @@ python -m PyInstaller ^
     --onedir ^
     --name "LakeShore336" ^
     --add-data "web;web" ^
-    --hidden-import serial ^
-    --hidden-import serial.tools.list_ports ^
+    --collect-all caproto ^
     --hidden-import tzdata ^
     --collect-data tzdata ^
     --clean ^
@@ -70,5 +69,5 @@ echo.
 echo Build complete:
 echo   dist\LakeShore336_portable.zip
 echo.
-echo The target Windows PC does not need Python, WSL, or internet access.
+echo The target Windows PC does not need Python or internet access; it needs network access to a running IOC.
 exit /b 0

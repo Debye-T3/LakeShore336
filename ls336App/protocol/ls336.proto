@@ -18,6 +18,10 @@ getControlInput {
     in "%*d,%d,%*d";
 }
 
+setControlInput {
+    out "CSET 1,%{A|B|C|D},1,1";
+}
+
 getSetpoint {
     out "SETP? 1";
     in "%f";
@@ -76,4 +80,32 @@ getPidI {
 getPidD {
     out "PID? 1";
     in "%*f,%*f,%f";
+}
+
+applyControl {
+    out "CSET 1,%(\$1Loop1:CTRL:INPUT:SNAP.VAL){None|A|B|C|D},1,1";
+    wait 150;
+    out "RANGE 1,%(\$1Loop1:CTRL:RANGE:SNAP.VAL)d";
+    wait 150;
+    out "RAMP 1,%(\$1Loop1:CTRL:RAMP:ENABLE:SNAP.VAL)d,%(\$1Loop1:CTRL:RAMP:RATE:SNAP.VAL).3f";
+    wait 150;
+    out "SETP 1,%(\$1Loop1:CTRL:SETP:SNAP.VAL).3f";
+    wait 150;
+    out "OUTMODE? 1";
+    in "%*d,%(\$1Loop1:INPUT_RBV.VAL)d,%*d";
+    out "RANGE? 1";
+    in "%(\$1Loop1:RANGE_RBV.VAL)d";
+    out "RAMP? 1";
+    in "%(\$1Loop1:RAMP:ENABLE_RBV.VAL)d,%(\$1Loop1:RAMP:RATE_RBV.VAL)f";
+    out "SETP? 1";
+    in "%(\$1Loop1:SETP_RBV.VAL)f";
+}
+
+applyPid {
+    out "PID? 1";
+    in "%(\$1Loop1:PID:P_OLD_RBV.VAL)f,%(\$1Loop1:PID:I_OLD_RBV.VAL)f,%(\$1Loop1:PID:D_OLD_RBV.VAL)f";
+    out "PID 1,%(\$1Loop1:PID:P:SNAP.VAL).3f,%(\$1Loop1:PID:I:SNAP.VAL).3f,%(\$1Loop1:PID:D:SNAP.VAL).3f";
+    wait 200;
+    out "PID? 1";
+    in "%(\$1Loop1:PID:P_RBV.VAL)f,%(\$1Loop1:PID:I_RBV.VAL)f,%(\$1Loop1:PID:D_RBV.VAL)f";
 }

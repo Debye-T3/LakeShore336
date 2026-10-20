@@ -8,8 +8,10 @@ ls336_DBD += base.dbd
 ls336_DBD += asyn.dbd
 ls336_DBD += drvAsynSerialPort.dbd
 ls336_DBD += stream.dbd
+ls336_DBD += ls336Support.dbd
 
 ls336_SRCS += ls336Main.cpp
+ls336_SRCS += ls336Control.cpp
 ls336_SRCS += ls336_registerRecordDeviceDriver.cpp
 
 ls336_LIBS += stream

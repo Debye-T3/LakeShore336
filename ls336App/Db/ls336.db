@@ -55,6 +55,68 @@ record(mbbi, "$(P)Loop1:INPUT_RBV") {
     field(SCAN, "2 second")
 }
 
+record(ao, "$(P)Loop1:INPUT") {
+    field(DESC, "Loop 1 control input command")
+    field(LOPR, "1")
+    field(HOPR, "4")
+    field(PINI, "NO")
+    field(ASG, "CONTROL")
+    field(FLNK, "$(P)Loop1:INPUT:VALIDATE.PROC")
+}
+
+record(calcout, "$(P)Loop1:INPUT:VALIDATE") {
+    field(DESC, "Loop 1 control input validation")
+    field(INPA, "$(P)Loop1:INPUT.VAL NPP NMS")
+    field(CALC, "!(A==1||A==2||A==3||A==4)")
+    field(OOPT, "Every Time")
+    field(OUT, "$(P)Loop1:INPUT:INVALID.VAL PP")
+    field(FLNK, "$(P)Loop1:INPUT:MAP.PROC")
+}
+
+record(longout, "$(P)Loop1:INPUT:INVALID") {
+    field(DESC, "Loop 1 control input is invalid")
+    field(PINI, "NO")
+    field(FLNK, "$(P)Loop1:INPUT:INVALID:REPORT.PROC")
+}
+
+record(calcout, "$(P)Loop1:INPUT:INVALID:REPORT") {
+    field(DESC, "Report invalid Loop 1 input selection")
+    field(INPA, "$(P)Loop1:INPUT:INVALID.VAL NPP NMS")
+    field(CALC, "A")
+    field(OOPT, "When Non-zero")
+    field(OUT, "$(P)ERR:INPUT.PROC PP")
+}
+
+record(stringout, "$(P)ERR:INPUT") {
+    field(DESC, "Control input validation error")
+    field(VAL, "Control input must be integer code 1..4 (A..D)")
+    field(OUT, "$(P)ERR PP")
+}
+
+record(calcout, "$(P)Loop1:INPUT:MAP") {
+    field(DESC, "Map validated input code to A-D enum")
+    field(INPA, "$(P)Loop1:INPUT.VAL NPP NMS")
+    field(CALC, "A-1")
+    field(OOPT, "Every Time")
+    field(OUT, "$(P)Loop1:INPUT:COMMAND.VAL PP")
+}
+
+record(mbbo, "$(P)Loop1:INPUT:COMMAND") {
+    field(DESC, "Internal A-D serial command")
+    field(DTYP, "stream")
+    field(OUT,  "@ls336.proto setControlInput $(PORT)")
+    field(ZRST, "A")
+    field(ONST, "B")
+    field(TWST, "C")
+    field(THST, "D")
+    field(NOBT, "2")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:INPUT:INVALID PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+    field(ASG, "DEFAULT")
+}
+
 record(ao, "$(P)Loop1:SETP") {
     field(DESC, "Loop 1 setpoint command")
     field(DTYP, "stream")
@@ -67,6 +129,7 @@ record(ao, "$(P)Loop1:SETP") {
     field(SDIS, "$(P)Loop1:SETP:INVALID PP MS")
     field(DISV, "1")
     field(DISS, "INVALID")
+    field(ASG, "CONTROL")
 }
 
 record(ai, "$(P)Loop1:SETP_RBV") {
@@ -112,6 +175,7 @@ record(ao, "$(P)Loop1:RAMP:ENABLE") {
     field(SDIS, "$(P)Loop1:RAMP:ENABLE:INVALID PP MS")
     field(DISV, "1")
     field(DISS, "INVALID")
+    field(ASG, "CONTROL")
 }
 
 record(bi, "$(P)Loop1:RAMP:ENABLE_RBV") {
@@ -158,6 +222,7 @@ record(ao, "$(P)Loop1:RAMP:RATE") {
     field(SDIS, "$(P)Loop1:RAMP:RATE:INVALID PP MS")
     field(DISV, "1")
     field(DISS, "INVALID")
+    field(ASG, "CONTROL")
 }
 
 record(calcout, "$(P)Loop1:RAMP:RATE:INVALID") {
@@ -184,6 +249,7 @@ record(ao, "$(P)Loop1:RANGE") {
     field(SDIS, "$(P)Loop1:RANGE:INVALID PP MS")
     field(DISV, "1")
     field(DISS, "INVALID")
+    field(ASG, "CONTROL")
 }
 
 record(mbbi, "$(P)Loop1:RANGE_RBV") {
@@ -289,4 +355,438 @@ record(stringout, "$(P)ERR:COMM") {
 record(stringout, "$(P)ERR") {
     field(DESC, "Last IOC-side error")
     field(VAL,  "")
+}
+
+# Staged values are captured and validated together by ls336PrepareControlApply.
+record(ao, "$(P)Loop1:CTRL:INPUT") {
+    field(DESC, "Staged Loop 1 control input")
+    field(LOPR, "1")
+    field(HOPR, "4")
+    field(PINI, "NO")
+    field(ASG, "CONTROL")
+}
+
+record(ao, "$(P)Loop1:CTRL:SETP") {
+    field(DESC, "Staged Loop 1 setpoint")
+    field(EGU, "K")
+    field(PREC, "3")
+    field(LOPR, "0")
+    field(HOPR, "350")
+    field(PINI, "NO")
+    field(ASG, "CONTROL")
+}
+
+record(ao, "$(P)Loop1:CTRL:RAMP:RATE") {
+    field(DESC, "Staged Loop 1 ramp rate")
+    field(EGU, "K/min")
+    field(PREC, "3")
+    field(LOPR, "0")
+    field(HOPR, "10")
+    field(PINI, "NO")
+    field(ASG, "CONTROL")
+}
+
+record(ao, "$(P)Loop1:CTRL:RANGE") {
+    field(DESC, "Staged Loop 1 heater range")
+    field(LOPR, "0")
+    field(HOPR, "3")
+    field(PINI, "NO")
+    field(ASG, "CONTROL")
+}
+
+record(longout, "$(P)Loop1:CTRL:VALID") {
+    field(DESC, "Captured control values passed validation")
+    field(PINI, "NO")
+}
+
+record(mbbo, "$(P)Loop1:CTRL:INPUT:SNAP") {
+    field(DESC, "Captured control input")
+    field(ZRST, "None")
+    field(ONST, "A")
+    field(TWST, "B")
+    field(THST, "C")
+    field(FRST, "D")
+    field(NOBT, "3")
+    field(PINI, "NO")
+}
+
+record(ao, "$(P)Loop1:CTRL:SETP:SNAP") {
+    field(DESC, "Captured setpoint")
+    field(PINI, "NO")
+}
+
+record(ao, "$(P)Loop1:CTRL:RAMP:RATE:SNAP") {
+    field(DESC, "Captured ramp rate")
+    field(PINI, "NO")
+}
+
+record(longout, "$(P)Loop1:CTRL:RAMP:ENABLE:SNAP") {
+    field(DESC, "Captured ramp enable state")
+    field(PINI, "NO")
+}
+
+record(mbbo, "$(P)Loop1:CTRL:RANGE:SNAP") {
+    field(DESC, "Captured heater range")
+    field(ZRST, "Off")
+    field(ONST, "Low")
+    field(TWST, "Medium")
+    field(THST, "High")
+    field(NOBT, "2")
+    field(PINI, "NO")
+}
+
+record(longout, "$(P)Loop1:CTRL:BUSY") {
+    field(DESC, "Grouped control operation busy")
+    field(PINI, "NO")
+}
+
+record(mbbo, "$(P)Loop1:CTRL:STATUS") {
+    field(DESC, "Grouped control operation status")
+    field(ZRST, "Idle")
+    field(ONST, "Busy")
+    field(TWST, "Done")
+    field(THST, "PartialFailure")
+    field(FRST, "Error")
+    field(NOBT, "3")
+    field(PINI, "NO")
+}
+
+record(stringout, "$(P)Loop1:CTRL:ERROR") {
+    field(DESC, "Grouped control operation error")
+    field(VAL, "")
+    field(PINI, "NO")
+}
+
+record(bo, "$(P)Loop1:CTRL:APPLY") {
+    field(DESC, "Validate and apply grouped Loop 1 settings")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:CTRL:BUSY PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+    field(ASG, "CONTROL")
+    field(FLNK, "$(P)Loop1:CTRL:PREPARE.PROC")
+}
+
+record(aSub, "$(P)Loop1:CTRL:PREPARE") {
+    field(DESC, "Capture and validate grouped control values")
+    field(SNAM, "ls336PrepareControlApply")
+    field(FTA, "DOUBLE")
+    field(INPA, "$(P)Loop1:CTRL:INPUT.VAL NPP NMS")
+    field(FTB, "DOUBLE")
+    field(INPB, "$(P)Loop1:CTRL:SETP.VAL NPP NMS")
+    field(FTC, "DOUBLE")
+    field(INPC, "$(P)Loop1:CTRL:RAMP:RATE.VAL NPP NMS")
+    field(FTD, "DOUBLE")
+    field(INPD, "$(P)Loop1:CTRL:RANGE.VAL NPP NMS")
+    field(FTVA, "ENUM")
+    field(OUTA, "$(P)Loop1:CTRL:INPUT:SNAP.VAL PP")
+    field(FTVB, "DOUBLE")
+    field(OUTB, "$(P)Loop1:CTRL:SETP:SNAP.VAL PP")
+    field(FTVC, "DOUBLE")
+    field(OUTC, "$(P)Loop1:CTRL:RAMP:RATE:SNAP.VAL PP")
+    field(FTVD, "ENUM")
+    field(OUTD, "$(P)Loop1:CTRL:RANGE:SNAP.VAL PP")
+    field(FTVE, "LONG")
+    field(OUTE, "$(P)Loop1:CTRL:VALID.VAL PP")
+    field(FTVF, "LONG")
+    field(OUTF, "$(P)Loop1:CTRL:STATUS.VAL PP")
+    field(FTVG, "LONG")
+    field(OUTG, "$(P)Loop1:CTRL:BUSY.VAL PP")
+    field(FTVH, "STRING")
+    field(OUTH, "$(P)Loop1:CTRL:ERROR.VAL PP")
+    field(FTVI, "LONG")
+    field(OUTI, "$(P)Loop1:CTRL:RAMP:ENABLE:SNAP.VAL PP")
+    field(PINI, "NO")
+    field(FLNK, "$(P)Loop1:CTRL:COMMAND.PROC")
+}
+
+record(longout, "$(P)Loop1:CTRL:COMMAND") {
+    field(DESC, "Internal grouped control serial transaction")
+    field(DTYP, "stream")
+    field(OUT, "@ls336.proto applyControl($(P)) $(PORT)")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:CTRL:VALID NPP MS")
+    field(DISV, "0")
+    field(DISS, "INVALID")
+    field(FLNK, "$(P)Loop1:CTRL:FINISH.PROC")
+}
+
+record(aSub, "$(P)Loop1:CTRL:FINISH") {
+    field(DESC, "Compare grouped control readbacks and finish status")
+    field(SNAM, "ls336FinishControlApply")
+    field(FTA, "ENUM")
+    field(INPA, "$(P)Loop1:CTRL:COMMAND.SEVR NPP NMS")
+    field(FTB, "DOUBLE")
+    field(INPB, "$(P)Loop1:CTRL:SETP:SNAP.VAL NPP NMS")
+    field(FTC, "DOUBLE")
+    field(INPC, "$(P)Loop1:CTRL:RAMP:RATE:SNAP.VAL NPP NMS")
+    field(FTD, "ENUM")
+    field(INPD, "$(P)Loop1:CTRL:RANGE:SNAP.VAL NPP NMS")
+    field(FTE, "ENUM")
+    field(INPE, "$(P)Loop1:CTRL:INPUT:SNAP.VAL NPP NMS")
+    field(FTF, "DOUBLE")
+    field(INPF, "$(P)Loop1:SETP_RBV.VAL NPP NMS")
+    field(FTG, "ENUM")
+    field(INPG, "$(P)Loop1:RAMP:ENABLE_RBV.VAL NPP NMS")
+    field(FTH, "DOUBLE")
+    field(INPH, "$(P)Loop1:RAMP:RATE_RBV.VAL NPP NMS")
+    field(FTI, "ENUM")
+    field(INPI, "$(P)Loop1:RANGE_RBV.VAL NPP NMS")
+    field(FTJ, "ENUM")
+    field(INPJ, "$(P)Loop1:INPUT_RBV.VAL NPP NMS")
+    field(FTK, "LONG")
+    field(INPK, "$(P)Loop1:CTRL:VALID.VAL NPP NMS")
+    field(FTVA, "LONG")
+    field(OUTA, "$(P)Loop1:CTRL:STATUS.VAL PP")
+    field(FTVB, "LONG")
+    field(OUTB, "$(P)Loop1:CTRL:BUSY.VAL PP")
+    field(FTVC, "STRING")
+    field(OUTC, "$(P)Loop1:CTRL:ERROR.VAL PP")
+    field(PINI, "NO")
+}
+
+record(ao, "$(P)Loop1:PID:P") {
+    field(DESC, "Staged Loop 1 PID proportional value")
+    field(PREC, "3")
+    field(LOPR, "0.1")
+    field(HOPR, "1000")
+    field(PINI, "NO")
+    field(ASG, "MAINT")
+}
+
+record(ao, "$(P)Loop1:PID:I") {
+    field(DESC, "Staged Loop 1 PID integral value")
+    field(PREC, "3")
+    field(LOPR, "0.1")
+    field(HOPR, "1000")
+    field(PINI, "NO")
+    field(ASG, "MAINT")
+}
+
+record(ao, "$(P)Loop1:PID:D") {
+    field(DESC, "Staged Loop 1 PID derivative value")
+    field(PREC, "3")
+    field(LOPR, "0")
+    field(HOPR, "200")
+    field(PINI, "NO")
+    field(ASG, "MAINT")
+}
+
+record(ai, "$(P)Loop1:PID:P_OLD_RBV") {
+    field(DESC, "PID proportional value before last apply")
+    field(PREC, "3")
+    field(PINI, "NO")
+}
+
+record(ai, "$(P)Loop1:PID:I_OLD_RBV") {
+    field(DESC, "PID integral value before last apply")
+    field(PREC, "3")
+    field(PINI, "NO")
+}
+
+record(ai, "$(P)Loop1:PID:D_OLD_RBV") {
+    field(DESC, "PID derivative value before last apply")
+    field(PREC, "3")
+    field(PINI, "NO")
+}
+
+record(mbbo, "$(P)Loop1:PID:STATUS") {
+    field(DESC, "PID maintenance operation status")
+    field(ZRST, "Idle")
+    field(ONST, "Busy")
+    field(TWST, "Done")
+    field(THST, "Reserved")
+    field(FRST, "Error")
+    field(NOBT, "3")
+    field(PINI, "NO")
+}
+
+record(stringout, "$(P)Loop1:PID:ERROR") {
+    field(DESC, "PID maintenance operation error")
+    field(VAL, "")
+    field(PINI, "NO")
+}
+
+record(bo, "$(P)Loop1:PID:APPLY") {
+    field(DESC, "Validate and apply Loop 1 PID values")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:PID:STATUS PP MS")
+    field(DISV, "1")
+    field(DISS, "INVALID")
+    field(ASG, "MAINT")
+    field(FLNK, "$(P)Loop1:PID:PREPARE.PROC")
+}
+
+record(ao, "$(P)Loop1:PID:P:SNAP") {
+    field(DESC, "Captured PID P value")
+    field(PINI, "NO")
+}
+
+record(ao, "$(P)Loop1:PID:I:SNAP") {
+    field(DESC, "Captured PID I value")
+    field(PINI, "NO")
+}
+
+record(ao, "$(P)Loop1:PID:D:SNAP") {
+    field(DESC, "Captured PID D value")
+    field(PINI, "NO")
+}
+
+record(longout, "$(P)Loop1:PID:VALID") {
+    field(DESC, "Captured PID values passed validation")
+    field(PINI, "NO")
+}
+
+record(longout, "$(P)Loop1:PID:BUSY") {
+    field(DESC, "PID maintenance operation busy")
+    field(PINI, "NO")
+}
+
+record(aSub, "$(P)Loop1:PID:PREPARE") {
+    field(DESC, "Capture and validate staged PID values")
+    field(SNAM, "ls336PreparePidApply")
+    field(FTA, "DOUBLE")
+    field(INPA, "$(P)Loop1:PID:P.VAL NPP NMS")
+    field(FTB, "DOUBLE")
+    field(INPB, "$(P)Loop1:PID:I.VAL NPP NMS")
+    field(FTC, "DOUBLE")
+    field(INPC, "$(P)Loop1:PID:D.VAL NPP NMS")
+    field(FTVA, "DOUBLE")
+    field(OUTA, "$(P)Loop1:PID:P:SNAP.VAL PP")
+    field(FTVB, "DOUBLE")
+    field(OUTB, "$(P)Loop1:PID:I:SNAP.VAL PP")
+    field(FTVC, "DOUBLE")
+    field(OUTC, "$(P)Loop1:PID:D:SNAP.VAL PP")
+    field(FTVD, "LONG")
+    field(OUTD, "$(P)Loop1:PID:VALID.VAL PP")
+    field(FTVE, "LONG")
+    field(OUTE, "$(P)Loop1:PID:STATUS.VAL PP")
+    field(FTVF, "LONG")
+    field(OUTF, "$(P)Loop1:PID:BUSY.VAL PP")
+    field(FTVG, "STRING")
+    field(OUTG, "$(P)Loop1:PID:ERROR.VAL PP")
+    field(PINI, "NO")
+    field(FLNK, "$(P)Loop1:PID:COMMAND.PROC")
+}
+
+record(longout, "$(P)Loop1:PID:COMMAND") {
+    field(DESC, "Internal PID serial transaction")
+    field(DTYP, "stream")
+    field(OUT, "@ls336.proto applyPid($(P)) $(PORT)")
+    field(PINI, "NO")
+    field(SDIS, "$(P)Loop1:PID:VALID NPP MS")
+    field(DISV, "0")
+    field(DISS, "INVALID")
+    field(FLNK, "$(P)Loop1:PID:FINISH.PROC")
+}
+
+record(aSub, "$(P)Loop1:PID:FINISH") {
+    field(DESC, "Compare PID readbacks and finish status")
+    field(SNAM, "ls336FinishPidApply")
+    field(FTA, "ENUM")
+    field(INPA, "$(P)Loop1:PID:COMMAND.SEVR NPP NMS")
+    field(FTB, "DOUBLE")
+    field(INPB, "$(P)Loop1:PID:P:SNAP.VAL NPP NMS")
+    field(FTC, "DOUBLE")
+    field(INPC, "$(P)Loop1:PID:I:SNAP.VAL NPP NMS")
+    field(FTD, "DOUBLE")
+    field(INPD, "$(P)Loop1:PID:D:SNAP.VAL NPP NMS")
+    field(FTE, "DOUBLE")
+    field(INPE, "$(P)Loop1:PID:P_RBV.VAL NPP NMS")
+    field(FTF, "DOUBLE")
+    field(INPF, "$(P)Loop1:PID:I_RBV.VAL NPP NMS")
+    field(FTG, "DOUBLE")
+    field(INPG, "$(P)Loop1:PID:D_RBV.VAL NPP NMS")
+    field(FTH, "LONG")
+    field(INPH, "$(P)Loop1:PID:VALID.VAL NPP NMS")
+    field(FTVA, "LONG")
+    field(OUTA, "$(P)Loop1:PID:STATUS.VAL PP")
+    field(FTVB, "LONG")
+    field(OUTB, "$(P)Loop1:PID:BUSY.VAL PP")
+    field(FTVC, "STRING")
+    field(OUTC, "$(P)Loop1:PID:ERROR.VAL PP")
+    field(PINI, "NO")
+}
+
+record(bo, "$(P)LOG:START") {
+    field(DESC, "Start CSV archive")
+    field(ZNAM, "Idle")
+    field(ONAM, "Request")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(ASG, "LOG_CONTROL")
+}
+
+record(bo, "$(P)LOG:PAUSE") {
+    field(DESC, "Pause CSV archive")
+    field(ZNAM, "Idle")
+    field(ONAM, "Request")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(ASG, "LOG_CONTROL")
+}
+
+record(bo, "$(P)LOG:RESUME") {
+    field(DESC, "Resume CSV archive")
+    field(ZNAM, "Idle")
+    field(ONAM, "Request")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(ASG, "LOG_CONTROL")
+}
+
+record(bo, "$(P)LOG:NEW_FILE") {
+    field(DESC, "Start a new CSV archive file")
+    field(ZNAM, "Idle")
+    field(ONAM, "Request")
+    field(VAL, "0")
+    field(PINI, "NO")
+    field(ASG, "LOG_CONTROL")
+}
+
+record(mbbo, "$(P)LOG:STATE_RBV") {
+    field(DESC, "CSV archive state")
+    field(ZRST, "Stopped")
+    field(ONST, "Recording")
+    field(TWST, "Paused")
+    field(THST, "Error")
+    field(NOBT, "2")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
+}
+
+record(waveform, "$(P)LOG:FILE_RBV") {
+    field(DESC, "Current CSV archive file")
+    field(FTVL, "CHAR")
+    field(NELM, "128")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
+}
+
+record(longout, "$(P)LOG:ROWS_RBV") {
+    field(DESC, "CSV archive rows written")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
+}
+
+record(stringout, "$(P)LOG:LAST_WRITE_RBV") {
+    field(DESC, "Last CSV archive write time")
+    field(VAL, "")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
+}
+
+record(stringout, "$(P)LOG:ERROR_RBV") {
+    field(DESC, "Last CSV archive error")
+    field(VAL, "")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
+}
+
+record(longout, "$(P)LOG:HEARTBEAT") {
+    field(DESC, "Python CSV archive process heartbeat")
+    field(PINI, "NO")
+    field(ASG, "ARCHIVER")
 }

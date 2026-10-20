@@ -59,18 +59,19 @@ main{max-width:1240px;margin:0 auto;padding:20px 24px}
 .topbar-left .brand-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .topbar-left .brand-dot.live{background:var(--accent-green);box-shadow:0 0 8px rgba(74,222,128,.5)}
 .topbar-left .brand-dot.dead{background:var(--accent-red);box-shadow:0 0 8px rgba(248,113,113,.4)}
+.topbar-left .brand-dot.warning{background:var(--accent-amber);box-shadow:0 0 8px rgba(250,204,21,.4)}
 
 .topbar-right{display:flex;align-items:center;gap:10px}
 .topbar-right select,.topbar-right button{font:inherit}
 
 /* ── Controls (select, input, button) ── */
-select,input[type=number]{
+select,input[type=number],input[type=text]{
   background:var(--bg-input);color:var(--text-primary);
   border:1px solid var(--border-default);border-radius:var(--radius-sm);
   padding:8px 12px;font-size:13px;outline:none;
   transition:border-color var(--transition-fast);
 }
-select:focus,input[type=number]:focus{border-color:var(--accent-cyan);box-shadow:0 0 0 3px rgba(34,211,238,.12)}
+select:focus,input[type=number]:focus,input[type=text]:focus{border-color:var(--accent-cyan);box-shadow:0 0 0 3px rgba(34,211,238,.12)}
 select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238fa3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
 input[type=number]{width:100%;-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{opacity:1}
@@ -154,6 +155,7 @@ button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
 }
 .status-badge.live{background:rgba(74,222,128,.1);color:var(--accent-green);border:1px solid rgba(74,222,128,.18)}
 .status-badge.dead{background:rgba(248,113,113,.08);color:var(--accent-red);border:1px solid rgba(248,113,113,.15)}
+.status-badge.warning{background:rgba(250,204,21,.08);color:var(--accent-amber);border:1px solid rgba(250,204,21,.18)}
 .status-badge.demo-mode{background:rgba(250,204,21,.08);color:var(--accent-yellow);border:1px solid rgba(250,204,21,.15)}
 
 /* ── Chart ── */
@@ -273,7 +275,8 @@ button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
     <span class="brand-dot dead" id="status_dot" title="Connection status"></span>
   </div>
   <div class="topbar-right">
-    <select id="port"></select>
+    <label for="prefix" style="color:var(--text-secondary);font-size:12px">IOC prefix</label>
+    <input id="prefix" type="text" value="LS336:" placeholder="LS336:" aria-label="IOC PV prefix or DEMO" title="IOC PV prefix, for example LS336:; enter DEMO to use the simulator" style="width:150px">
     <button class="btn-primary" onclick="connect()">Connect</button>
     <button class="btn-secondary" onclick="refresh()">Refresh</button>
   </div>
@@ -405,7 +408,7 @@ button:focus-visible{box-shadow:0 0 0 3px rgba(34,211,238,.3)}
 
 <script>
 // ── State ──
-let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={},pendingControlRequest=null;
+let backend=false,autoTimer=null,logRows=[],logEnabled=false,lastData={},history=[],logStatus={},pendingControlRequest=null,lastHeartbeatState=null,lastLogError=null;
 let editingInputs=new Set();
 let demo={inputs:{A:82.4,B:84.1,C:296,D:296},coldInput:'A',sampleInput:'B',controlInput:'B',setpoint:90,ramp:.5,range:3,pid:[40,80,2],last:performance.now()};
 const rangeNames=['Off','Low','Medium','High'];
@@ -426,39 +429,50 @@ function log(m){
   const el=document.getElementById('system_log');
   el.innerHTML='['+new Date().toLocaleTimeString()+'] '+m+'<br>'+el.innerHTML;
 }
-async function loadPorts(){
-  try{const d=await api('/api/ports');backend=true;fillPorts(d.ports);await refreshLogStatus()}catch{
-    backend=false;fillPorts(['DEMO']);logEnabled=true;
+async function loadConfig(){
+  try{const d=await api('/api/config');backend=true;document.getElementById('prefix').value=d.prefix||'LS336:';await refreshLogStatus()}catch{
+    backend=false;document.getElementById('prefix').value='DEMO';logEnabled=true;
     log('Demo mode — CSV is browser-temporary only. Connect a real instrument for permanent archiving.');
     updateLogStatus({active:true,filename:'demo temporary CSV',rows:0,last_write_local:'--'});
   }
 }
-function fillPorts(ports){
-  const s=document.getElementById('port');
-  s.innerHTML='';
-  ports.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o)});
-}
 async function connect(){
   try{
-    const port=document.getElementById('port').value;
-    const d=backend?await api('/api/connect',{port}):simulate();
+    const prefix=document.getElementById('prefix').value.trim()||'LS336:';
+    const d=backend?await api('/api/connect',{prefix}):simulate();
     update(d);
     syncCommandInputsFromReadback(d);
-    setStatus(port==='DEMO'?'demo':'live',port==='DEMO'?'DEMO MODE':'CONNECTED');
-    document.getElementById('status_dot').classList.remove('dead');
-    document.getElementById('status_dot').classList.add('live');
     startAuto();
-    log('Connected — logging started');
-  }catch(e){log('ERROR: '+e.message)}
+    log(d.comm==='Demo'?'Connected to simulator':'Connected to IOC '+prefix+' — logging started');
+  }catch(e){
+    const message=String(e.message||e),lower=message.toLowerCase();
+    const accessDenied=lower.includes('access denied');
+    setStatus(accessDenied?'warning':'dead',accessDenied?'ACCESS DENIED':(lower.includes('timed out')?'IOC TIMEOUT':(lower.includes('ioc unavailable')?'IOC UNAVAILABLE':'CONNECTION FAILED')));
+    setConnectionDot(accessDenied?'warning':'dead');
+    log('ERROR: '+message);
+  }
 }
 async function refresh(){
-  try{update(backend?await api('/api/read'):simulate())}catch(e){log('ERROR: '+e.message)}
+  try{update(backend?await api('/api/read'):simulate())}catch(e){setStatus('dead','IOC UNAVAILABLE');setConnectionDot('dead');log('ERROR: '+e.message)}
 }
 
 function setStatus(state,text){
   const el=document.getElementById('connect_state');
-  el.className='status-badge '+(state==='live'?'live':state==='demo'?'demo-mode':'dead');
+  el.className='status-badge '+(state==='live'?'live':state==='demo'?'demo-mode':state==='warning'?'warning':'dead');
   el.textContent=text;
+}
+function setConnectionDot(state){
+  const dot=document.getElementById('status_dot');
+  dot.classList.remove('live','dead','warning');
+  dot.classList.add(state);
+}
+function updateConnectionState(comm){
+  if(comm==='Demo'){setStatus('demo','DEMO MODE');setConnectionDot('warning');return}
+  if(comm==='Connected'){setStatus('live','IOC CONNECTED · INSTRUMENT CONNECTED');setConnectionDot('live');return}
+  if(comm==='IOC unavailable'){setStatus('dead','IOC UNAVAILABLE');setConnectionDot('dead');return}
+  if(comm==='IOC timeout'){setStatus('dead','IOC TIMEOUT');setConnectionDot('dead');return}
+  if(comm==='CA read error'){setStatus('warning','CA READ ERROR');setConnectionDot('warning');return}
+  if(comm){setStatus('warning','IOC CONNECTED · INSTRUMENT '+String(comm).toUpperCase());setConnectionDot('warning')}
 }
 
 // ── Apply ──
@@ -528,11 +542,12 @@ function checkPendingControlRequest(){
   if(!mismatches.length){pendingControlRequest=null;return}
   if(!pendingControlRequest.warned&&Date.now()-pendingControlRequest.created>8000){
     pendingControlRequest.warned=true;
-    log('WARNING: instrument readback still differs after 8 s. Check COM port ownership, front-panel lock/local limits, and Lake Shore accepted ranges. '+mismatches.join('; '));
+    log('WARNING: instrument readback still differs after 8 s. Check IOC communication, front-panel lock/local limits, and Lake Shore accepted ranges. '+mismatches.join('; '));
   }
 }
 function update(d){
   lastData={...lastData,...d};
+  if(d.comm)updateConnectionState(d.comm);
   ['cold_head','sample','setpoint','ramp_rate','heater','heater_range','input_a','input_b','input_c','input_d'].forEach(k=>{const el=document.getElementById(k);if(el)el.textContent=d[k]??lastData[k]??'--'});
   if(d.cold_input){setIfNotEditing('cold_input',d.cold_input);document.getElementById('cold_input_badge').textContent=d.cold_input}
   if(d.sample_input){setIfNotEditing('sample_input',d.sample_input);document.getElementById('sample_input_badge').textContent=d.sample_input}
@@ -563,6 +578,7 @@ function updateWarnings(){
   const items=[];
   const target=Number(lastData.setpoint),ramp=Number(lastData.ramp_rate),heater=Number(lastData.heater),sample=Number(lastData.sample);
   const controlInput=lastData.control_input||document.getElementById('control_input').value;
+  if(lastData.comm&&lastData.comm!=='Connected'&&lastData.comm!=='Demo')items.push('Communication status: '+lastData.comm);
   if(target>350)items.push('Setpoint exceeds 350 K safety limit');
   if(ramp>10)items.push('Ramp rate exceeds 10 K/min safety limit');
   if(heater>85)items.push('Heater output high: '+heater.toFixed(1)+'%');
@@ -579,7 +595,7 @@ function updateWarnings(){
     list.style.display='none';
     return;
   }
-  const critical=items.some(i=>i.includes('350 K')||i.includes('10 K/min')||i.includes('reads 0 K'));
+  const critical=items.some(i=>i.includes('350 K')||i.includes('10 K/min')||i.includes('reads 0 K')||i.includes('IOC unavailable')||i.includes('IOC timeout')||i.includes('communication error')||i.includes('Communication status: Error')||i.includes('Communication status: Disconnected'));
   header.className=critical?'warn-header critical':'warn-header warnings';
   iconOk.style.display='none';iconAlert.style.display='';
   title.textContent=items.length+' Warning'+(items.length>1?'s':'');
@@ -644,12 +660,17 @@ async function refreshLogStatus(){try{if(backend)updateLogStatus(await api('/api
 function updateLogStatus(s){
   logStatus=s||{};
   const st=document.getElementById('recording_state');
-  const label=s.active?'ON':'PAUSED';st.textContent=label;
-  st.className='log-value '+(s.error?'paused':(s.active?'on':'paused'));
+  const lost=s.mode==='epics'&&s.heartbeat_alive===false;
+  const label=lost?'HEARTBEAT LOST':(s.state==='error'?'ERROR':(s.state==='stopped'?'STOPPED':(s.active?'ON':'PAUSED')));st.textContent=label;
+  st.className='log-value '+(lost||s.error?'paused':(s.active?'on':'paused'));
+  const heartbeatState=lost?'lost':'alive';
+  if(lastHeartbeatState!==null&&lastHeartbeatState!==heartbeatState)log(lost?'ERROR: IOC archive heartbeat stopped':'Archive heartbeat recovered');
+  lastHeartbeatState=heartbeatState;
   document.getElementById('log_file').textContent=s.filename||'--';
   document.getElementById('log_rows').textContent=String(s.rows??0);
   document.getElementById('last_write').textContent=s.last_write_local||'--';
-  if(s.error)log('LOG ERROR: '+s.error);
+  if(s.error&&s.error!==lastLogError)log('LOG ERROR: '+s.error);
+  lastLogError=s.error||null;
 }
 function appendLocalLog(){
   logRows.push([beijingIsoTime(),lastData.cold_head,lastData.sample,lastData.input_a,lastData.input_b,lastData.input_c,lastData.input_d,lastData.setpoint,lastData.ramp_enable,lastData.ramp_rate,lastData.heater_range,lastData.heater,lastData.pid_p,lastData.pid_i,lastData.pid_d,lastData.comm,document.getElementById('stable_state').textContent]);
@@ -672,7 +693,7 @@ function openMaintenance(){if(!backend){log('Maintenance page requires a connect
 });
 
 // ── Init ──
-loadPorts();
+loadConfig();
 </script>
 </body>
 </html>
